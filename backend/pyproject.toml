@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "regops-api"
 version = "0.1.0"
-description = "Phase 0 RegOps API contract implementation"
+description = "RegOps API contract and Phase 1A vertical-path domain foundation"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [

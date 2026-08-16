@@ -1,4 +1,4 @@
-"""Minimal Phase 0 FastAPI application."""
+"""FastAPI contract boundary; Phase 1A workflow logic lives behind typed ports."""
 
 from __future__ import annotations
 
