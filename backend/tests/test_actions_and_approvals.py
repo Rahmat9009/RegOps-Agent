@@ -184,15 +184,26 @@ def test_rejected_amendment_never_executes_and_repeated_decision_conflicts() -> 
     )
 
     assert result.approval.status is ApprovalStatus.REJECTED
+    assert result.approval.finding_id == "finding-1"
     assert result.approval.decided_by == DEMO_REVIEWER
     assert result.counterfactual is None
     assert repositories.get_action(attempt.action.action_id).action.status is ActionStatus.REJECTED
+    assert repositories.get_finding("finding-1").status is FindingStatus.OPEN
+    assert repositories.get_run("run-1").completed_actions == []
     with pytest.raises(RecordNotFoundError):
         repositories.get_shadow_snapshot(result.approval.action_id)
     assert not any(
         event.event_type is AuditEventType.ACTION_EXECUTED
         for event in repositories.list_audit_events("run-1")
     )
+    report = AuditReportService(
+        runs=repositories,
+        actions=repositories,
+        findings=repositories,
+        audits=repositories,
+        clock=lambda: NOW,
+    ).generate("run-1")
+    assert report.executed_actions == []
     with pytest.raises(ApprovalAlreadyDecidedError):
         approvals.decide(
             attempt.approval.approval_id,

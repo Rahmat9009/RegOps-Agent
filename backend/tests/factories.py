@@ -19,6 +19,7 @@ from regops_api.schemas import (
     Run,
     RunProgress,
     RunState,
+    RunTransition,
     Severity,
     SourceAuthority,
 )
@@ -47,6 +48,15 @@ def make_run(run_id: str = "run-1") -> Run:
             documents_processed=0,
             percent=0,
         ),
+        transitions=[
+            RunTransition(
+                from_state=None,
+                to_state=RunState.INGESTED,
+                occurred_at=NOW,
+                reason="Synthetic regulation accepted",
+                actor="system",
+            )
+        ],
         findings_by_severity=FindingsBySeverity(low=0, medium=0, high=1),
     )
 

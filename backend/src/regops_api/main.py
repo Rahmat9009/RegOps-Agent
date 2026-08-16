@@ -27,6 +27,7 @@ from regops_api.schemas import (
     Run,
     RunProgress,
     RunState,
+    RunTransition,
     Severity,
 )
 
@@ -145,6 +146,15 @@ async def create_run(
             partitions_complete=0,
             percent=0,
         ),
+        transitions=[
+            RunTransition(
+                from_state=None,
+                to_state=RunState.INGESTED,
+                occurred_at=now,
+                reason="Synthetic regulation accepted",
+                actor="system",
+            )
+        ],
         findings_by_severity=FindingsBySeverity(low=0, medium=0, high=0),
     )
 
@@ -171,6 +181,8 @@ async def list_run_findings(
     run_id: Annotated[str, PathParameter(min_length=1)],
     severity: Annotated[Severity | None, Query()] = None,
     q: Annotated[str | None, Query(min_length=1)] = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
 ) -> FindingList:
     _phase_zero_stub()
 

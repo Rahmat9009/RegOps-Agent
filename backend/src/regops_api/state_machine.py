@@ -9,7 +9,7 @@ from uuid import uuid4
 
 from regops_api.domain_models import AuditEvent, AuditEventType, RunCheckpoint
 from regops_api.repositories import AuditRepository, CheckpointRepository, RunRepository
-from regops_api.schemas import Run, RunState
+from regops_api.schemas import Run, RunState, RunTransition
 
 Clock = Callable[[], datetime]
 
@@ -119,12 +119,30 @@ class RunStateCoordinator:
         target: RunState,
         *,
         failure_code: str | None = None,
+        reason: str | None = None,
+        actor: str = "system",
     ) -> Run:
         run = self._runs.get_run(run_id)
         latest = self._checkpoints.latest_checkpoint(run_id)
         self._machine.validate(run.state, target, checkpoint=latest)
         now = self._clock()
-        updated = run.model_copy(update={"state": target, "updated_at": now})
+        updated = Run.model_validate(
+            {
+                **run.model_dump(),
+                "state": target,
+                "updated_at": now,
+                "transitions": [
+                    *run.transitions,
+                    RunTransition(
+                        from_state=run.state,
+                        to_state=target,
+                        occurred_at=now,
+                        reason=reason,
+                        actor=actor,
+                    ),
+                ],
+            }
+        )
         sequence = 0 if latest is None else latest.sequence + 1
         checkpoint = RunCheckpoint(
             run_id=run_id,

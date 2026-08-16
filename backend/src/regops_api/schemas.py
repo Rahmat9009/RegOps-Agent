@@ -4,9 +4,28 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from enum import StrEnum
-from typing import Literal
+from typing import Annotated, Literal
+from urllib.parse import urlsplit
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import (
+    AnyUrl,
+    BaseModel,
+    ConfigDict,
+    Field,
+    UrlConstraints,
+    field_validator,
+    model_validator,
+)
+from pydantic.json_schema import WithJsonSchema
+
+HTTPS_URL_PATTERN = r"^[Hh][Tt][Tt][Pp][Ss]://[^/?#\s]+"
+HttpsUrl = Annotated[
+    AnyUrl,
+    UrlConstraints(allowed_schemes=["https"], host_required=True),
+    WithJsonSchema(
+        {"type": "string", "format": "uri", "pattern": HTTPS_URL_PATTERN}
+    ),
+]
 
 
 class ContractModel(BaseModel):
@@ -188,6 +207,7 @@ class FindingSummary(ContractModel):
     verdict: FindingVerdict
     status: FindingStatus
     human_review_required: bool
+    scores: FindingScores
 
 
 class AffectedCase(ContractModel):
@@ -201,13 +221,28 @@ class Finding(FindingSummary):
     obligation: Obligation
     affected_case: AffectedCase | None = None
     evidence_path: list[EvidenceReference] = Field(min_length=1)
-    scores: FindingScores
     proposed_action: ProposedAction | None = None
 
 
+class FindingsBySeverity(ContractModel):
+    low: int = Field(ge=0)
+    medium: int = Field(ge=0)
+    high: int = Field(ge=0)
+
+
 class FindingList(ContractModel):
-    items: list[FindingSummary]
-    total: int = Field(ge=0)
+    items: list[FindingSummary] = Field(description="Selected page of matching findings.")
+    total: int = Field(
+        ge=0,
+        description="Findings matching the active filters before pagination.",
+    )
+    limit: int = Field(ge=1, le=100)
+    offset: int = Field(ge=0)
+    by_severity: FindingsBySeverity = Field(
+        description=(
+            "Severity counts across the complete filtered result before pagination."
+        )
+    )
 
 
 class CounterfactualPreview(ContractModel):
@@ -228,6 +263,7 @@ class Approval(ContractModel):
     approval_id: str = Field(min_length=1)
     action_id: str = Field(min_length=1)
     run_id: str = Field(min_length=1)
+    finding_id: str = Field(min_length=1)
     status: ApprovalStatus
     decided_at: datetime | None = None
     decided_by: str | None = Field(
@@ -242,10 +278,44 @@ class ApprovalDecision(ContractModel):
     note: str | None = None
 
 
-class FindingsBySeverity(ContractModel):
-    low: int = Field(ge=0)
-    medium: int = Field(ge=0)
-    high: int = Field(ge=0)
+class RunTransition(ContractModel):
+    from_state: RunState | None
+    to_state: RunState
+    occurred_at: datetime
+    reason: Annotated[str, Field(min_length=1)] | None
+    actor: str = Field(min_length=1)
+
+
+class RecoveryInfo(ContractModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "if": {
+                "properties": {"recovery_available": {"const": True}},
+                "required": ["recovery_available"],
+            },
+            "then": {"properties": {"checkpoint_state": {"not": {"type": "null"}}}},
+        },
+    )
+
+    recovery_available: bool
+    checkpoint_state: RunState | None
+    attempt_count: int = Field(ge=0)
+    last_error_code: str | None
+    last_error_message: str | None
+
+    @model_validator(mode="after")
+    def available_recovery_requires_checkpoint(self) -> RecoveryInfo:
+        if self.recovery_available and self.checkpoint_state is None:
+            raise ValueError("recovery_available requires checkpoint_state")
+        return self
+
+
+class ChangeDetection(ContractModel):
+    source_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    previous_source_sha256: str | None = Field(pattern=r"^[0-9a-f]{64}$")
+    changed: bool
+    detected_at: datetime
 
 
 class Run(ContractModel):
@@ -255,11 +325,44 @@ class Run(ContractModel):
     updated_at: datetime
     regulation: Regulation
     progress: RunProgress
+    transitions: list[RunTransition] = Field(
+        min_length=1,
+        json_schema_extra={
+            "prefixItems": [
+                {
+                    "allOf": [
+                        {"$ref": "#/components/schemas/RunTransition"},
+                        {
+                            "type": "object",
+                            "required": ["from_state"],
+                            "properties": {"from_state": {"type": "null"}},
+                        },
+                    ]
+                }
+            ]
+        },
+    )
+    recovery: RecoveryInfo | None = None
+    change_detection: ChangeDetection | None = None
     findings_by_severity: FindingsBySeverity = Field(
         default_factory=lambda: FindingsBySeverity(low=0, medium=0, high=0)
     )
     pending_approvals: list[Approval] = Field(default_factory=list)
     completed_actions: list[ProposedAction] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def transitions_form_authoritative_chain(self) -> Run:
+        if self.transitions[0].from_state is not None:
+            raise ValueError("the first transition must have a null from_state")
+        for previous, current in zip(self.transitions, self.transitions[1:], strict=False):
+            if current.from_state is not previous.to_state:
+                raise ValueError("transitions must form a continuous state chain")
+        timestamps = [transition.occurred_at for transition in self.transitions]
+        if timestamps != sorted(timestamps):
+            raise ValueError("transitions must be ordered oldest to newest")
+        if self.transitions[-1].to_state is not self.state:
+            raise ValueError("the final transition must agree with run state")
+        return self
 
 
 class AuditIdempotency(ContractModel):
@@ -294,4 +397,27 @@ class AuditReport(ContractModel):
     revalidation: AuditRevalidation
     processing: AuditProcessing
     evaluation: AuditEvaluation | None = None
-    audit_package_url: str | None = None
+    audit_package_url: HttpsUrl | None = Field(
+        default=None,
+        description=(
+            "Short-lived, absolute HTTPS signed download URL generated by the backend; "
+            "clients never submit this response-only value"
+        ),
+    )
+
+    @field_validator("audit_package_url", mode="before")
+    @classmethod
+    def audit_package_url_has_raw_https_host(cls, value: object) -> object:
+        if value is None:
+            return None
+        raw_value = str(value)
+        if raw_value != raw_value.strip():
+            raise ValueError("audit_package_url must not contain surrounding whitespace")
+        try:
+            parsed = urlsplit(raw_value)
+            host = parsed.hostname
+        except ValueError as error:
+            raise ValueError("audit_package_url must be a valid absolute HTTPS URL") from error
+        if parsed.scheme.lower() != "https" or not parsed.netloc or not host:
+            raise ValueError("audit_package_url must be a valid absolute HTTPS URL")
+        return value

@@ -197,6 +197,7 @@ class AllowlistedActionService:
             approval_id=str(uuid5(NAMESPACE_URL, f"regops:approval:{proposal.action_id}")),
             action_id=proposal.action_id,
             run_id=finding.run_id,
+            finding_id=finding.finding_id,
             status=ApprovalStatus.PENDING,
         )
         self._approvals.add_approval(approval)
