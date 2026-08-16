@@ -1,24 +1,32 @@
 // index.ts — Single entry point for all data access.
-// Components do: `import { api } from "@/lib/api";`  and call typed methods.
+// Components do: `import { api } from "@/lib/api";` and call typed methods.
 //
-// To switch from mock to the real backend, implement HttpRegOpsApi (a fetch client
-// against contracts/openapi.yaml) and change the one line in `createApi()`. No
-// component changes required.
+// The adapter is selected by VITE_API_MODE at build/dev time:
+//   mock (default) — MockRegOpsApi, full synthetic workflow, no backend needed
+//   http           — HttpRegOpsApi against contracts/openapi.yaml
+//
+// Both implement RegOpsApi, so switching requires no component changes.
 
 import type { RegOpsApi } from "./client";
+import { HttpRegOpsApi } from "./httpAdapter";
 import { MockRegOpsApi } from "./mockAdapter";
 
-export type { RegOpsApi, ListFindingsParams } from "./client";
+export type { ListFindingsParams, RegOpsApi } from "./client";
 export * from "./types";
-export { SYNTHETIC_NOTICE } from "./mockData";
+export { isRegOpsApiError, RegOpsApiError, toRegOpsApiError } from "./errors";
+export type { ApiErrorKind } from "./errors";
+export { SHADOW_COPY_NOTICE, SYNTHETIC_NOTICE } from "./mockData";
 
-// Flip this (or wire to import.meta.env.VITE_USE_REAL_API) once the backend is live.
-const USE_REAL_API = false;
+export type ApiMode = "mock" | "http";
+
+export const API_MODE: ApiMode =
+  (import.meta.env.VITE_API_MODE ?? "mock").toLowerCase() === "http" ? "http" : "mock";
+
+export const API_BASE_URL: string = import.meta.env.VITE_API_BASE_URL ?? "/api/v1";
 
 function createApi(): RegOpsApi {
-  if (USE_REAL_API) {
-    // return new HttpRegOpsApi(import.meta.env.VITE_API_BASE_URL ?? "/api/v1");
-    throw new Error("Real API client not implemented yet — set USE_REAL_API=false.");
+  if (API_MODE === "http") {
+    return new HttpRegOpsApi({ baseUrl: API_BASE_URL });
   }
   return new MockRegOpsApi();
 }
