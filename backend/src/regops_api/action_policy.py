@@ -11,16 +11,19 @@ from uuid import NAMESPACE_URL, uuid4, uuid5
 from regops_api.domain_models import (
     ActionAttemptResult,
     ActionRecord,
+    ApprovalRequiredActionCommit,
     AuditEvent,
     AuditEventType,
     CaseTag,
     IdempotencyResult,
     InternalReviewTask,
+    PendingApprovalSlot,
     ProposedAmendment,
 )
 from regops_api.repositories import (
     ActionRepository,
     ApprovalRepository,
+    ApprovalRequiredActionAtomicRepository,
     AuditRepository,
     CaseTagRepository,
     FindingRepository,
@@ -82,6 +85,7 @@ class AllowlistedActionService:
         case_tags: CaseTagRepository,
         approvals: ApprovalRepository,
         audits: AuditRepository,
+        atomic: ApprovalRequiredActionAtomicRepository | None = None,
         clock: Clock = lambda: datetime.now(UTC),
     ) -> None:
         self._actions = actions
@@ -90,6 +94,13 @@ class AllowlistedActionService:
         self._case_tags = case_tags
         self._approvals = approvals
         self._audits = audits
+        self._atomic = (
+            atomic
+            if atomic is not None
+            else actions
+            if isinstance(actions, ApprovalRequiredActionAtomicRepository)
+            else None
+        )
         self._clock = clock
         self._policy = ActionPolicy()
 
@@ -104,31 +115,6 @@ class AllowlistedActionService:
         validated_finding = Finding.model_validate(finding.model_dump())
         proposal = self._policy.propose(validated_finding, action_type)
         now = self._clock()
-        self._audit(
-            run_id=finding.run_id,
-            event_type=AuditEventType.ACTION_ATTEMPTED,
-            action_id=proposal.action_id,
-            now=now,
-        )
-        existing = self._actions.find_action_by_idempotency_key(proposal.idempotency_key)
-        if existing is not None:
-            self._audits.append_audit_event(
-                AuditEvent(
-                    event_id=str(uuid4()),
-                    run_id=finding.run_id,
-                    event_type=AuditEventType.IDEMPOTENCY_RESULT,
-                    occurred_at=now,
-                    action_id=existing.action.action_id,
-                    idempotency_result=IdempotencyResult.DUPLICATE_PREVENTED,
-                )
-            )
-            approval = self._approval_for(existing.action.action_id, finding.run_id)
-            return ActionAttemptResult(
-                action=existing.action,
-                duplicate_prevented=True,
-                approval=approval,
-            )
-
         if action_type is ActionType.DRAFT_AMENDMENT and (
             amendment is None or amendment.action_id != proposal.action_id
         ):
@@ -147,6 +133,88 @@ class AllowlistedActionService:
             action=proposal,
             amendment=amendment,
         )
+        if action_type is ActionType.DRAFT_AMENDMENT:
+            if self._atomic is None:
+                raise RuntimeError(
+                    "approval-required actions require an atomic repository"
+                )
+            approval = Approval(
+                approval_id=str(uuid5(NAMESPACE_URL, f"regops:approval:{proposal.action_id}")),
+                action_id=proposal.action_id,
+                run_id=finding.run_id,
+                finding_id=finding.finding_id,
+                status=ApprovalStatus.PENDING,
+            )
+            updated_finding = finding.model_copy(
+                update={
+                    "status": FindingStatus.AWAITING_APPROVAL,
+                    "proposed_action": proposal,
+                }
+            )
+            return self._atomic.create_approval_required_action(
+                ApprovalRequiredActionCommit(
+                    expected_finding=validated_finding,
+                    action=record,
+                    approval=approval,
+                    finding=updated_finding,
+                    pending_slot=PendingApprovalSlot(
+                        run_id=finding.run_id,
+                        approval_id=approval.approval_id,
+                        action_id=proposal.action_id,
+                        finding_id=finding.finding_id,
+                    ),
+                    action_attempt_event=AuditEvent(
+                        event_id=str(uuid4()),
+                        run_id=finding.run_id,
+                        event_type=AuditEventType.ACTION_ATTEMPTED,
+                        occurred_at=now,
+                        action_id=proposal.action_id,
+                    ),
+                    first_execution_event=AuditEvent(
+                        event_id=str(uuid4()),
+                        run_id=finding.run_id,
+                        event_type=AuditEventType.IDEMPOTENCY_RESULT,
+                        occurred_at=now,
+                        action_id=proposal.action_id,
+                        idempotency_result=IdempotencyResult.FIRST_EXECUTION,
+                    ),
+                    duplicate_event=AuditEvent(
+                        event_id=str(uuid4()),
+                        run_id=finding.run_id,
+                        event_type=AuditEventType.IDEMPOTENCY_RESULT,
+                        occurred_at=now,
+                        action_id=proposal.action_id,
+                        idempotency_result=IdempotencyResult.DUPLICATE_PREVENTED,
+                    ),
+                )
+            )
+
+        self._audit(
+            run_id=finding.run_id,
+            event_type=AuditEventType.ACTION_ATTEMPTED,
+            action_id=proposal.action_id,
+            now=now,
+        )
+        existing = self._actions.find_action_by_idempotency_key(proposal.idempotency_key)
+        if existing is not None:
+            self._audits.append_audit_event(
+                AuditEvent(
+                    event_id=str(uuid4()),
+                    run_id=finding.run_id,
+                    event_type=AuditEventType.IDEMPOTENCY_RESULT,
+                    occurred_at=now,
+                    action_id=existing.action.action_id,
+                    idempotency_result=IdempotencyResult.DUPLICATE_PREVENTED,
+                )
+            )
+            existing_approval = self._approval_for(
+                existing.action.action_id, finding.run_id
+            )
+            return ActionAttemptResult(
+                action=existing.action,
+                duplicate_prevented=True,
+                approval=existing_approval,
+            )
         self._actions.add_action(record)
         self._audits.append_audit_event(
             AuditEvent(
@@ -193,23 +261,7 @@ class AllowlistedActionService:
             self._audit_executed(finding.run_id, executed.action_id, now)
             return ActionAttemptResult(action=executed, duplicate_prevented=False)
 
-        approval = Approval(
-            approval_id=str(uuid5(NAMESPACE_URL, f"regops:approval:{proposal.action_id}")),
-            action_id=proposal.action_id,
-            run_id=finding.run_id,
-            finding_id=finding.finding_id,
-            status=ApprovalStatus.PENDING,
-        )
-        self._approvals.add_approval(approval)
-        self._mark_finding_action(
-            finding.model_copy(update={"status": FindingStatus.AWAITING_APPROVAL}),
-            proposal,
-        )
-        return ActionAttemptResult(
-            action=proposal,
-            duplicate_prevented=False,
-            approval=approval,
-        )
+        raise AssertionError("unreachable allowlisted action type")
 
     def _mark_finding_action(self, finding: Finding, action: ProposedAction) -> None:
         self._findings.update_finding(finding.model_copy(update={"proposed_action": action}))

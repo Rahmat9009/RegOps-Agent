@@ -8,17 +8,43 @@ from threading import RLock
 from typing import Literal, TypeVar
 
 from regops_api.domain_models import (
+    ActionAttemptResult,
     ActionRecord,
+    ApprovalDecisionCommit,
+    ApprovalRequiredActionCommit,
     AuditEvent,
     CaseTag,
     InternalReviewTask,
+    PendingApprovalSlot,
     RegulationRecord,
     RunCheckpoint,
+    RunIntakeCommit,
     ShadowContractSnapshot,
+    SourceDocumentRecord,
     SyntheticContract,
 )
-from regops_api.repositories import DuplicateRecordError, RecordNotFoundError
-from regops_api.schemas import Approval, AuditReport, Finding, Obligation, Run
+from regops_api.repositories import (
+    DuplicateRecordError,
+    RecordNotFoundError,
+    StaleRecordError,
+    validate_approval_decision_outputs,
+)
+from regops_api.schemas import (
+    AffectedCase,
+    Approval,
+    ApprovalStatus,
+    AuditReport,
+    Finding,
+    FindingStatus,
+    Obligation,
+    Run,
+    RunState,
+)
+from regops_api.state_machine import (
+    InvalidRunTransitionError,
+    validate_authoritative_run_update,
+    validate_initial_run,
+)
 
 RecordT = TypeVar("RecordT")
 
@@ -37,8 +63,10 @@ class InMemoryRepositories:
         self._lock = RLock()
         self._runs: dict[str, Run] = {}
         self._regulations: dict[str, RegulationRecord] = {}
+        self._source_documents: dict[str, SourceDocumentRecord] = {}
         self._obligations: dict[str, list[Obligation]] = {}
         self._contracts: dict[str, SyntheticContract] = {}
+        self._cases: dict[str, AffectedCase] = {}
         self._snapshots: dict[str, ShadowContractSnapshot] = {}
         self._findings: dict[str, Finding] = {}
         self._tasks: dict[str, InternalReviewTask] = {}
@@ -49,6 +77,7 @@ class InMemoryRepositories:
         self._action_keys: dict[str, str] = {}
         self._checkpoints: dict[str, list[RunCheckpoint]] = {}
         self._case_tags: dict[str, list[CaseTag]] = {}
+        self._pending_approval_slots: dict[str, PendingApprovalSlot] = {}
 
     @classmethod
     def for_tests(cls) -> InMemoryRepositories:
@@ -75,6 +104,13 @@ class InMemoryRepositories:
             self._insert_unique(
                 self._regulations, record.regulation.reg_id, record
             )
+
+    def add_source_document(self, record: SourceDocumentRecord) -> None:
+        with self._lock:
+            self._insert_unique(self._source_documents, record.run_id, record)
+
+    def get_source_document(self, run_id: str) -> SourceDocumentRecord:
+        return self._get(self._source_documents, run_id, "source document")
 
     def get_regulation(self, regulation_id: str) -> RegulationRecord:
         return self._get(self._regulations, regulation_id, "regulation")
@@ -128,6 +164,17 @@ class InMemoryRepositories:
     def list_synthetic_contracts(self) -> list[SyntheticContract]:
         with self._lock:
             return deepcopy(list(self._contracts.values()))
+
+    def add_synthetic_case(self, case: AffectedCase) -> None:
+        with self._lock:
+            self._insert_unique(self._cases, case.case_id, case)
+
+    def get_synthetic_case(self, case_id: str) -> AffectedCase:
+        return self._get(self._cases, case_id, "synthetic case")
+
+    def list_synthetic_cases(self) -> list[AffectedCase]:
+        with self._lock:
+            return deepcopy(list(self._cases.values()))
 
     def save_shadow_snapshot(self, snapshot: ShadowContractSnapshot) -> None:
         with self._lock:
@@ -260,6 +307,251 @@ class InMemoryRepositories:
     def list_case_tags(self, run_id: str) -> list[CaseTag]:
         with self._lock:
             return deepcopy(self._case_tags.get(run_id, []))
+
+    def initialize_run_state(self, run: Run, checkpoint: RunCheckpoint) -> None:
+        with self._lock:
+            validate_initial_run(run, checkpoint)
+            self._insert_unique(self._runs, run.run_id, run)
+            checkpoints = self._checkpoints.setdefault(run.run_id, [])
+            if checkpoints:
+                raise DuplicateRecordError("initial checkpoint already exists")
+            checkpoints.append(deepcopy(checkpoint))
+
+    def commit_run_intake(self, commit: RunIntakeCommit) -> None:
+        with self._lock:
+            validate_initial_run(commit.run, commit.checkpoint)
+            regulation_id = commit.regulation.regulation.reg_id
+            if (
+                commit.run.run_id in self._runs
+                or regulation_id in self._regulations
+                or commit.source_document.run_id in self._source_documents
+                or self._checkpoints.get(commit.run.run_id)
+            ):
+                raise DuplicateRecordError("run intake metadata already exists")
+            self._runs[commit.run.run_id] = deepcopy(commit.run)
+            self._regulations[regulation_id] = deepcopy(commit.regulation)
+            self._source_documents[commit.source_document.run_id] = deepcopy(
+                commit.source_document
+            )
+            self._checkpoints[commit.run.run_id] = [deepcopy(commit.checkpoint)]
+
+    def create_approval_required_action(
+        self, commit: ApprovalRequiredActionCommit
+    ) -> ActionAttemptResult:
+        with self._lock:
+            proposed = commit.action.action
+            current_run = self._get(self._runs, commit.action.run_id, "run")
+            current_finding = self._get(
+                self._findings, proposed.finding_id, "finding"
+            )
+            pending = sorted(
+                (
+                    approval
+                    for approval in self._approvals.values()
+                    if approval.run_id == commit.action.run_id
+                    and approval.status is ApprovalStatus.PENDING
+                ),
+                key=lambda item: item.approval_id,
+            )
+            claimed_action_id = self._action_keys.get(proposed.idempotency_key)
+            if claimed_action_id is not None:
+                existing = self._actions.get(claimed_action_id)
+                approval = self._approvals.get(commit.approval.approval_id)
+                slot = self._pending_approval_slots.get(commit.action.run_id)
+                if (
+                    existing is None
+                    or claimed_action_id != proposed.action_id
+                    or existing.action.idempotency_key != proposed.idempotency_key
+                    or existing.run_id != commit.action.run_id
+                    or approval is None
+                    or approval.action_id != existing.action.action_id
+                    or approval.finding_id != existing.action.finding_id
+                    or approval.run_id != existing.run_id
+                    or approval.status is not ApprovalStatus.PENDING
+                    or slot != commit.pending_slot
+                    or [item.approval_id for item in pending]
+                    != [approval.approval_id]
+                    or current_finding.run_id != existing.run_id
+                    or current_finding.status is not FindingStatus.AWAITING_APPROVAL
+                    or current_finding.proposed_action != existing.action
+                    or current_run.state in {RunState.COMPLETED, RunState.FAILED}
+                ):
+                    raise StaleRecordError(
+                        "idempotency claim is not bound to a coherent approval"
+                    )
+                self._events.setdefault(existing.run_id, []).extend(
+                    deepcopy([commit.action_attempt_event, commit.duplicate_event])
+                )
+                return ActionAttemptResult(
+                    action=deepcopy(existing.action),
+                    duplicate_prevented=True,
+                    approval=deepcopy(approval),
+                )
+            if (
+                proposed.action_id in self._actions
+                or commit.approval.approval_id in self._approvals
+            ):
+                raise DuplicateRecordError("approval-required action identifier exists")
+            if pending or commit.action.run_id in self._pending_approval_slots:
+                raise DuplicateRecordError(
+                    "run already has a pending draft-amendment approval"
+                )
+            if (
+                current_finding != commit.expected_finding
+                or current_finding.run_id != commit.action.run_id
+                or current_run.run_id != commit.action.run_id
+                or current_run.state in {RunState.COMPLETED, RunState.FAILED}
+            ):
+                raise StaleRecordError("approval-required action binding changed")
+            self._actions[proposed.action_id] = deepcopy(commit.action)
+            self._action_keys[proposed.idempotency_key] = proposed.action_id
+            self._approvals[commit.approval.approval_id] = deepcopy(commit.approval)
+            self._findings[commit.finding.finding_id] = deepcopy(commit.finding)
+            self._pending_approval_slots[commit.action.run_id] = deepcopy(
+                commit.pending_slot
+            )
+            self._events.setdefault(commit.action.run_id, []).extend(
+                deepcopy(
+                    [commit.action_attempt_event, commit.first_execution_event]
+                )
+            )
+            return ActionAttemptResult(
+                action=deepcopy(proposed),
+                duplicate_prevented=False,
+                approval=deepcopy(commit.approval),
+            )
+
+    def commit_run_transition(
+        self,
+        *,
+        expected_state: RunState,
+        run: Run,
+        checkpoint: RunCheckpoint,
+        audit_event: AuditEvent,
+    ) -> None:
+        with self._lock:
+            current = self._get(self._runs, run.run_id, "run")
+            if current.state is not expected_state:
+                raise StaleRecordError("run state changed before transition commit")
+            if run.state is RunState.COMPLETED and (
+                run.run_id in self._pending_approval_slots
+                or any(
+                    approval.run_id == run.run_id
+                    and approval.status is ApprovalStatus.PENDING
+                    for approval in self._approvals.values()
+                )
+            ):
+                raise StaleRecordError("completed run cannot retain a pending approval")
+            expected_sequence = len(self._checkpoints.get(run.run_id, []))
+            if checkpoint.sequence != expected_sequence:
+                raise StaleRecordError("checkpoint sequence changed before transition commit")
+            previous = self._checkpoints[run.run_id][-1]
+            try:
+                validate_authoritative_run_update(
+                    current=current,
+                    updated=run,
+                    previous_checkpoint=previous,
+                    checkpoints=[checkpoint],
+                    audit_events=[audit_event],
+                )
+            except InvalidRunTransitionError as error:
+                raise StaleRecordError("run transition binding changed") from error
+            self._runs[run.run_id] = deepcopy(run)
+            self._checkpoints.setdefault(run.run_id, []).append(deepcopy(checkpoint))
+            self._events.setdefault(run.run_id, []).append(deepcopy(audit_event))
+
+    def commit_approval_decision(self, commit: ApprovalDecisionCommit) -> None:
+        with self._lock:
+            current_approval = self._get(
+                self._approvals, commit.approval.approval_id, "approval"
+            )
+            current_action = self._get(
+                self._actions, commit.action.action.action_id, "action"
+            )
+            current_finding = self._get(
+                self._findings, commit.finding.finding_id, "finding"
+            )
+            current_run = self._get(self._runs, commit.run.run_id, "run")
+            current_slot = self._pending_approval_slots.get(commit.run.run_id)
+            pending_ids = sorted(
+                approval.approval_id
+                for approval in self._approvals.values()
+                if approval.run_id == commit.run.run_id
+                and approval.status is ApprovalStatus.PENDING
+            )
+            if current_approval != commit.expected_approval:
+                raise StaleRecordError("approval changed before decision commit")
+            if current_action != commit.expected_action:
+                raise StaleRecordError("action changed before decision commit")
+            if current_finding != commit.expected_finding:
+                raise StaleRecordError("finding binding changed before decision commit")
+            if current_run.state is not commit.expected_run_state:
+                raise StaleRecordError("run changed before decision commit")
+            if (
+                current_slot is None
+                or current_slot.approval_id != current_approval.approval_id
+                or current_slot.action_id != current_action.action.action_id
+                or current_slot.finding_id != current_finding.finding_id
+                or pending_ids != [current_approval.approval_id]
+            ):
+                raise StaleRecordError("pending approval guard is inconsistent")
+            checkpoints = self._checkpoints.get(commit.run.run_id, [])
+            next_sequence = len(checkpoints)
+            if any(
+                checkpoint.run_id != commit.run.run_id
+                or checkpoint.sequence != next_sequence + offset
+                for offset, checkpoint in enumerate(commit.checkpoints)
+            ):
+                raise StaleRecordError("approval checkpoint sequence changed")
+            if not checkpoints:
+                raise StaleRecordError("approval run has no previous checkpoint")
+            if (
+                commit.approval.status is ApprovalStatus.PENDING
+                or commit.run.pending_approvals
+                or commit.run.state is not RunState.COMPLETED
+            ):
+                raise StaleRecordError("approval decision must clear pending state")
+            validate_approval_decision_outputs(commit)
+            try:
+                validate_authoritative_run_update(
+                    current=current_run,
+                    updated=commit.run,
+                    previous_checkpoint=checkpoints[-1],
+                    checkpoints=commit.checkpoints,
+                    audit_events=commit.audit_events,
+                )
+            except InvalidRunTransitionError as error:
+                raise StaleRecordError("approval transition binding changed") from error
+            if commit.snapshot is not None:
+                amendment = current_action.amendment
+                if amendment is None:
+                    raise StaleRecordError("approved action has no bound amendment")
+                source = self._get(
+                    self._contracts, amendment.contract_id, "synthetic contract"
+                )
+                if (
+                    commit.snapshot.run_id != current_action.run_id
+                    or commit.snapshot.action_id != current_action.action.action_id
+                    or commit.snapshot.original != source
+                    or commit.snapshot.shadow.contract_id != source.contract_id
+                ):
+                    raise StaleRecordError("shadow snapshot binding changed")
+                if commit.snapshot.snapshot_id in self._snapshots:
+                    raise DuplicateRecordError("shadow snapshot already exists")
+            if commit.snapshot is not None:
+                self._snapshots[commit.snapshot.snapshot_id] = deepcopy(commit.snapshot)
+            self._approvals[commit.approval.approval_id] = deepcopy(commit.approval)
+            self._actions[commit.action.action.action_id] = deepcopy(commit.action)
+            self._findings[commit.finding.finding_id] = deepcopy(commit.finding)
+            self._runs[commit.run.run_id] = deepcopy(commit.run)
+            del self._pending_approval_slots[commit.run.run_id]
+            for checkpoint in commit.checkpoints:
+                self._checkpoints.setdefault(checkpoint.run_id, []).append(
+                    deepcopy(checkpoint)
+                )
+            self._events.setdefault(commit.run.run_id, []).extend(
+                deepcopy(commit.audit_events)
+            )
 
     def _insert_unique(
         self, collection: dict[str, RecordT], key: str, value: RecordT

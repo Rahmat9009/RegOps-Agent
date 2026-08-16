@@ -6,7 +6,12 @@ from typing import Protocol, TypeVar
 
 from pydantic import BaseModel
 
-from regops_api.domain_models import AnalystOutput, InvestigatorOutput
+from regops_api.domain_models import (
+    AnalystOutput,
+    InvestigatorOutput,
+    StoredSourceObject,
+    WorkflowLaunchRequest,
+)
 from regops_api.schemas import Obligation, Regulation
 
 StructuredOutput = TypeVar("StructuredOutput", bound=BaseModel)
@@ -33,6 +38,33 @@ class CloudStoragePort(Protocol):
     def put(self, *, object_name: str, content: bytes, content_type: str) -> str: ...
 
     def get(self, *, object_name: str) -> bytes: ...
+
+
+class RuntimeStoragePort(Protocol):
+    def store_source(
+        self,
+        *,
+        run_id: str,
+        content: bytes,
+        content_type: str,
+    ) -> StoredSourceObject: ...
+
+    def delete_source(self, *, run_id: str, object_name: str) -> None: ...
+
+    def store_audit_package_and_sign(
+        self,
+        *,
+        run_id: str,
+        content: bytes,
+    ) -> str: ...
+
+
+class WorkflowLauncher(Protocol):
+    def launch(self, request: WorkflowLaunchRequest) -> str: ...
+
+
+class ReviewerIdentityProvider(Protocol):
+    def reviewer_id(self) -> str: ...
 
 
 class GoogleWorkflowsApprovalPort(Protocol):

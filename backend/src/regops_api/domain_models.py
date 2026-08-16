@@ -9,11 +9,15 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from regops_api.schemas import (
+    ActionAutonomy,
+    ActionStatus,
     ActionType,
     AffectedCase,
     Approval,
+    ApprovalStatus,
     AuditReport,
     EvidenceReference,
+    Finding,
     FindingScores,
     FindingStatus,
     FindingVerdict,
@@ -21,6 +25,7 @@ from regops_api.schemas import (
     ProposedAction,
     Regulation,
     Relationship,
+    Run,
     RunState,
     Severity,
 )
@@ -51,6 +56,31 @@ class RegulationRecord(DomainModel):
     version: int = Field(ge=1)
     supersedes_regulation_id: str | None = None
     created_at: datetime
+
+
+class SourceDocumentRecord(DomainModel):
+    run_id: str = Field(min_length=1)
+    regulation_id: str = Field(min_length=1)
+    object_name: str = Field(min_length=1)
+    gcs_uri: str = Field(pattern=r"^gs://[^/]+/.+$")
+    source_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    size_bytes: int = Field(ge=1)
+    content_type: Literal["application/pdf"]
+    sanitized_filename: str = Field(min_length=1)
+    synthetic: Literal[True]
+    created_at: datetime
+
+
+class StoredSourceObject(DomainModel):
+    object_name: str = Field(min_length=1)
+    gcs_uri: str = Field(pattern=r"^gs://[^/]+/.+$")
+
+
+class WorkflowLaunchRequest(DomainModel):
+    run_id: str = Field(min_length=1)
+    source_gcs_uri: str = Field(pattern=r"^gs://[^/]+/.+$")
+    source_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    synthetic: Literal[True]
 
 
 class SyntheticContract(DomainModel):
@@ -143,6 +173,80 @@ class ActionAttemptResult(DomainModel):
     approval: Approval | None = None
 
 
+class PendingApprovalSlot(DomainModel):
+    run_id: str = Field(min_length=1)
+    approval_id: str = Field(min_length=1)
+    action_id: str = Field(min_length=1)
+    finding_id: str = Field(min_length=1)
+
+
+class ApprovalRequiredActionCommit(DomainModel):
+    expected_finding: Finding
+    action: ActionRecord
+    approval: Approval
+    finding: Finding
+    pending_slot: PendingApprovalSlot
+    action_attempt_event: AuditEvent
+    first_execution_event: AuditEvent
+    duplicate_event: AuditEvent
+
+    @model_validator(mode="after")
+    def records_are_coherently_bound(self) -> ApprovalRequiredActionCommit:
+        proposed = self.action.action
+        amendment = self.action.amendment
+        expected_finding = self.expected_finding.model_copy(
+            update={
+                "status": FindingStatus.AWAITING_APPROVAL,
+                "proposed_action": proposed,
+            }
+        )
+        identifiers = {
+            self.expected_finding.run_id,
+            self.action.run_id,
+            self.approval.run_id,
+            self.finding.run_id,
+            self.pending_slot.run_id,
+            self.action_attempt_event.run_id,
+            self.first_execution_event.run_id,
+            self.duplicate_event.run_id,
+        }
+        if len(identifiers) != 1:
+            raise ValueError("approval-required action records must share one run")
+        if (
+            proposed.type is not ActionType.DRAFT_AMENDMENT
+            or proposed.autonomy is not ActionAutonomy.APPROVAL_REQUIRED
+            or proposed.status is not ActionStatus.AWAITING_APPROVAL
+            or self.approval.status is not ApprovalStatus.PENDING
+            or self.expected_finding.finding_id != proposed.finding_id
+            or self.finding.finding_id != proposed.finding_id
+            or self.approval.finding_id != proposed.finding_id
+            or self.approval.action_id != proposed.action_id
+            or self.pending_slot.approval_id != self.approval.approval_id
+            or self.pending_slot.action_id != proposed.action_id
+            or self.pending_slot.finding_id != proposed.finding_id
+            or self.finding.status is not FindingStatus.AWAITING_APPROVAL
+            or self.finding.proposed_action != proposed
+            or self.finding != expected_finding
+            or amendment is None
+            or amendment.action_id != proposed.action_id
+            or amendment.finding_id != proposed.finding_id
+            or amendment.contract_id != self.expected_finding.target_id
+            or self.action_attempt_event.event_type is not AuditEventType.ACTION_ATTEMPTED
+            or self.action_attempt_event.action_id != proposed.action_id
+            or self.first_execution_event.event_type
+            is not AuditEventType.IDEMPOTENCY_RESULT
+            or self.first_execution_event.action_id != proposed.action_id
+            or self.first_execution_event.idempotency_result
+            is not IdempotencyResult.FIRST_EXECUTION
+            or self.duplicate_event.event_type is not AuditEventType.IDEMPOTENCY_RESULT
+            or self.duplicate_event.action_id != proposed.action_id
+            or self.duplicate_event.idempotency_result
+            is not IdempotencyResult.DUPLICATE_PREVENTED
+        ):
+            raise ValueError("approval-required action binding is invalid")
+        return self
+
+
 class RunCheckpoint(DomainModel):
     run_id: str = Field(min_length=1)
     sequence: int = Field(ge=0)
@@ -157,6 +261,39 @@ class RunCheckpoint(DomainModel):
             raise ValueError("FAILED_RECOVERABLE checkpoints require resume_state")
         if self.state is not RunState.FAILED_RECOVERABLE and self.resume_state is not None:
             raise ValueError("resume_state is only valid for FAILED_RECOVERABLE checkpoints")
+        return self
+
+
+class RunIntakeCommit(DomainModel):
+    run: Run
+    checkpoint: RunCheckpoint
+    regulation: RegulationRecord
+    source_document: SourceDocumentRecord
+
+    @model_validator(mode="after")
+    def records_are_coherently_bound(self) -> RunIntakeCommit:
+        expected_object_name = f"runs/{self.run.run_id}/source/regulation.pdf"
+        gcs_object_name = self.source_document.gcs_uri.removeprefix("gs://").partition(
+            "/"
+        )[2]
+        if (
+            self.run.state is not RunState.INGESTED
+            or self.checkpoint.run_id != self.run.run_id
+            or self.checkpoint.sequence != 0
+            or self.checkpoint.state is not self.run.state
+            or self.checkpoint.recorded_at != self.run.created_at
+            or self.regulation.regulation != self.run.regulation
+            or self.source_document.run_id != self.run.run_id
+            or self.source_document.regulation_id != self.run.regulation.reg_id
+            or self.source_document.source_sha256 != self.regulation.content_sha256
+            or self.source_document.sanitized_filename
+            != self.run.regulation.source_filename
+            or self.source_document.object_name != expected_object_name
+            or gcs_object_name != expected_object_name
+            or self.source_document.created_at != self.run.created_at
+            or self.regulation.created_at != self.run.created_at
+        ):
+            raise ValueError("run intake metadata binding is invalid")
         return self
 
 
@@ -232,3 +369,17 @@ class StoredApproval(DomainModel):
 
 class StoredAuditReport(DomainModel):
     report: AuditReport
+
+
+class ApprovalDecisionCommit(DomainModel):
+    expected_approval: Approval
+    expected_action: ActionRecord
+    expected_finding: Finding
+    expected_run_state: RunState
+    approval: Approval
+    action: ActionRecord
+    finding: Finding
+    run: Run
+    snapshot: ShadowContractSnapshot | None = None
+    checkpoints: list[RunCheckpoint]
+    audit_events: list[AuditEvent]

@@ -8,7 +8,21 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
+from regops_api.approvals import ApprovalAlreadyDecidedError
+from regops_api.integrations import IntegrationUnavailableError
+from regops_api.repositories import (
+    DuplicateRecordError,
+    RecordNotFoundError,
+    StaleRecordError,
+)
+from regops_api.runtime_errors import (
+    DocumentTooLargeError,
+    DomainConflictError,
+    RuntimeConfigurationError,
+    UnsupportedDocumentError,
+)
 from regops_api.schemas import APIError, ErrorDetail
+from regops_api.state_machine import InvalidRunTransitionError
 
 
 class APIException(Exception):
@@ -62,3 +76,61 @@ def register_exception_handlers(app: FastAPI) -> None:
             exc.status_code,
             APIError(code=f"HTTP_{exc.status_code}", message=message),
         )
+
+    @app.exception_handler(RecordNotFoundError)
+    async def handle_not_found(
+        _request: Request, _exc: RecordNotFoundError
+    ) -> JSONResponse:
+        return _error_response(
+            404,
+            APIError(code="NOT_FOUND", message="Requested resource was not found"),
+        )
+
+    conflict_types = (
+        ApprovalAlreadyDecidedError,
+        DomainConflictError,
+        DuplicateRecordError,
+        InvalidRunTransitionError,
+        StaleRecordError,
+    )
+
+    async def handle_conflict(_request: Request, _exc: Exception) -> JSONResponse:
+        return _error_response(
+            409,
+            APIError(code="CONFLICT", message="Request conflicts with current state"),
+        )
+
+    for conflict_type in conflict_types:
+        app.add_exception_handler(conflict_type, handle_conflict)
+
+    @app.exception_handler(DocumentTooLargeError)
+    async def handle_oversized(
+        _request: Request, _exc: DocumentTooLargeError
+    ) -> JSONResponse:
+        return _error_response(
+            413,
+            APIError(code="DOCUMENT_TOO_LARGE", message="Uploaded document is too large"),
+        )
+
+    @app.exception_handler(UnsupportedDocumentError)
+    async def handle_unsupported(
+        _request: Request, _exc: UnsupportedDocumentError
+    ) -> JSONResponse:
+        return _error_response(
+            415,
+            APIError(code="UNSUPPORTED_DOCUMENT", message="A valid PDF is required"),
+        )
+
+    unavailable_types = (IntegrationUnavailableError, RuntimeConfigurationError)
+
+    async def handle_unavailable(_request: Request, _exc: Exception) -> JSONResponse:
+        return _error_response(
+            503,
+            APIError(
+                code="SERVICE_UNAVAILABLE",
+                message="A required service is unavailable",
+            ),
+        )
+
+    for unavailable_type in unavailable_types:
+        app.add_exception_handler(unavailable_type, handle_unavailable)

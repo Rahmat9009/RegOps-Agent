@@ -74,3 +74,36 @@ Security invariants remain unchanged: `ApprovalDecision` accepts only `decision`
 optional `note`; reviewer identity is backend-controlled; analyst and investigator
 roles have no action tools; actions remain allowlisted; and the in-memory adapter
 cannot be selected as production persistence.
+
+## 2026-08-16 — Phase 1B.1 persistent API plane
+
+The frozen contract and run-state document were not changed. The six former runtime
+`501` boundaries now use typed repositories and existing deterministic services.
+Demo and production composition is fail-closed around Firestore, private Cloud
+Storage, Google Workflows executions, and backend-controlled reviewer identity.
+
+Run transitions, approval decisions, shadow snapshots, and deterministic action
+idempotency claims have explicit Firestore transaction boundaries. Intake stores the
+exact PDF bytes under a run-scoped private object name, persists reproducibility
+metadata, and passes only safe references to Workflows. The Gemini/ADK analysis
+worker and Google Cloud provisioning remain deferred.
+
+## 2026-08-26 — Phase 1B.1 final runtime-safety correction
+
+The frozen contract and frontend were not changed. Firestore now has atomic
+boundaries for all intake metadata and approval-required draft creation. A
+run-scoped `pending_approval_slots` guard enforces the focused one-amendment
+scenario; approval decisions verify and clear it transactionally, and ordinary run
+transitions cannot commit `COMPLETED` while any pending Approval remains. Corrupted
+multiple-pending data fails closed.
+
+If metadata persistence fails after a private source upload, cleanup is restricted
+to the exact run-scoped source object and cannot hide the original persistence
+failure. Workflow-launch failure remains later in the sequence and preserves both
+metadata and source while recording `FAILED_RECOVERABLE`.
+
+Synchronous Firestore, Storage, and Workflows calls no longer execute directly on
+FastAPI's event loop. Demo mode is the currently deployable synthetic hackathon
+mode. Production authentication is not implemented; the default global app
+intentionally fails closed in production until a trusted reviewer identity adapter
+is injected.

@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 
-from regops_api.main import app
+from regops_api.main import app, create_app
+from tests.runtime_helpers import make_runtime
 
 client = TestClient(app)
 
@@ -12,23 +13,25 @@ def test_health() -> None:
     assert response.json() == {"status": "ok", "version": "0.1.0"}
 
 
-def test_all_six_workflow_operations_use_structured_stubs() -> None:
+def test_all_six_runtime_operations_are_implemented_and_use_structured_404s() -> None:
+    runtime = make_runtime()
+    runtime_client = TestClient(create_app(settings=runtime.settings, runtime=runtime))
     responses = [
-        client.get("/api/v1/runs/run-1"),
-        client.get("/api/v1/runs/run-1/findings"),
-        client.get("/api/v1/findings/finding-1"),
-        client.post("/api/v1/actions/action-1/preview"),
-        client.post(
+        runtime_client.get("/api/v1/runs/run-1"),
+        runtime_client.get("/api/v1/runs/run-1/findings"),
+        runtime_client.get("/api/v1/findings/finding-1"),
+        runtime_client.post("/api/v1/actions/action-1/preview"),
+        runtime_client.post(
             "/api/v1/approvals/approval-1/decision",
             json={"decision": "reject"},
         ),
-        client.get("/api/v1/runs/run-1/audit"),
+        runtime_client.get("/api/v1/runs/run-1/audit"),
     ]
 
     for response in responses:
-        assert response.status_code == 501
+        assert response.status_code == 404
         assert response.json() == {
-            "code": "NOT_IMPLEMENTED",
-            "message": "This operation is declared for integration but begins after Phase 0",
+            "code": "NOT_FOUND",
+            "message": "Requested resource was not found",
             "details": None,
         }
