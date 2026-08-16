@@ -1,0 +1,585 @@
+openapi: 3.1.0
+info:
+  title: RegOps API
+  version: 0.1.0
+  description: >-
+    Phase 0 integration contract. RegOps identifies potential conflicts and supports
+    review; it does not determine legal compliance. All contracts and cases are
+    synthetic and labeled. Phase 0 implements health and run intake; other declared
+    operations return structured 501 responses until their later phase.
+servers:
+  - url: /api/v1
+    description: RegOps API v1
+
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      summary: Liveness and readiness probe
+      responses:
+        "200":
+          description: Service healthy
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HealthStatus" }
+
+  /runs:
+    post:
+      operationId: createRun
+      summary: Accept a synthetic regulation PDF and create an ingested run
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [regulation_file, synthetic_ack]
+              properties:
+                regulation_file:
+                  type: string
+                  contentMediaType: application/pdf
+                  description: Required PDF binary for a synthetic regulation
+                synthetic_ack:
+                  type: boolean
+                  description: Confirms that the uploaded demo document is synthetic
+      responses:
+        "202":
+          description: Run accepted in the INGESTED state
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Run" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /runs/{run_id}:
+    get:
+      operationId: getRun
+      summary: Get run state and polling progress
+      parameters:
+        - $ref: "#/components/parameters/RunId"
+      responses:
+        "200":
+          description: Run detail
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Run" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "501": { $ref: "#/components/responses/NotImplemented" }
+
+  /runs/{run_id}/findings:
+    get:
+      operationId: listRunFindings
+      summary: List findings for a run
+      parameters:
+        - $ref: "#/components/parameters/RunId"
+        - in: query
+          name: severity
+          schema:
+            anyOf:
+              - $ref: "#/components/schemas/Severity"
+              - type: "null"
+        - in: query
+          name: q
+          description: Free-text search over target and obligation text
+          schema:
+            anyOf:
+              - type: string
+                minLength: 1
+              - type: "null"
+      responses:
+        "200":
+          description: Findings list
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FindingList" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "501": { $ref: "#/components/responses/NotImplemented" }
+
+  /findings/{finding_id}:
+    get:
+      operationId: getFinding
+      summary: Get a finding and its evidence chain
+      parameters:
+        - $ref: "#/components/parameters/FindingId"
+      responses:
+        "200":
+          description: Finding detail
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Finding" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "501": { $ref: "#/components/responses/NotImplemented" }
+
+  /actions/{action_id}/preview:
+    post:
+      operationId: previewAction
+      summary: Get a deterministic shadow-state counterfactual preview
+      description: >-
+        Authoritative counts and identifiers come from rerunning the same matching and
+        validation pipeline against a shadow copy. Gemini may later explain the result
+        but cannot calculate those values.
+      parameters:
+        - $ref: "#/components/parameters/ActionId"
+      responses:
+        "200":
+          description: Deterministic counterfactual output
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CounterfactualPreview" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "501": { $ref: "#/components/responses/NotImplemented" }
+
+  /approvals/{approval_id}/decision:
+    post:
+      operationId: decideApproval
+      summary: Record a human approval decision
+      parameters:
+        - $ref: "#/components/parameters/ApprovalId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ApprovalDecision" }
+      responses:
+        "200":
+          description: Decision recorded
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Approval" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: Approval already decided
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/APIError" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "501": { $ref: "#/components/responses/NotImplemented" }
+
+  /runs/{run_id}/audit:
+    get:
+      operationId: getRunAudit
+      summary: Get a run audit report
+      parameters:
+        - $ref: "#/components/parameters/RunId"
+      responses:
+        "200":
+          description: Audit report
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuditReport" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "501": { $ref: "#/components/responses/NotImplemented" }
+
+components:
+  parameters:
+    RunId:
+      in: path
+      name: run_id
+      required: true
+      schema: { type: string, minLength: 1 }
+    FindingId:
+      in: path
+      name: finding_id
+      required: true
+      schema: { type: string, minLength: 1 }
+    ActionId:
+      in: path
+      name: action_id
+      required: true
+      schema: { type: string, minLength: 1 }
+    ApprovalId:
+      in: path
+      name: approval_id
+      required: true
+      schema: { type: string, minLength: 1 }
+
+  responses:
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/APIError" }
+    ValidationError:
+      description: Request validation failed
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/APIError" }
+    NotImplemented:
+      description: Operation begins after Phase 0
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/APIError" }
+
+  schemas:
+    RunState:
+      type: string
+      enum: [INGESTED, EXTRACTING, EXTRACTED, MAPPING, MAPPED, VERIFYING, VERIFIED,
+        AWAITING_APPROVAL, EXECUTING, REVALIDATING, COMPLETED, FAILED_RECOVERABLE, FAILED]
+    Severity:
+      type: string
+      enum: [low, medium, high]
+    SourceAuthority:
+      type: string
+      enum: [primary_government, secondary, internal]
+    Relationship:
+      type: string
+      enum: [conflicts_with, requires_update, no_impact]
+    FindingVerdict:
+      type: string
+      enum: [survived, refuted, uncertain]
+    FindingStatus:
+      type: string
+      enum: [OPEN, AWAITING_APPROVAL, RESOLVED]
+    ActionType:
+      type: string
+      enum: [tag_case, create_review_task, draft_amendment]
+    ActionAutonomy:
+      type: string
+      enum: [auto, approval_required]
+    ActionStatus:
+      type: string
+      enum: [PENDING, EXECUTED, AWAITING_APPROVAL, APPROVED_DRAFT, REJECTED]
+    ApprovalStatus:
+      type: string
+      enum: [PENDING, APPROVED, REJECTED]
+    ApprovalDecisionValue:
+      type: string
+      enum: [approve, reject]
+    ObligationType:
+      type: string
+      enum: [prohibition, requirement, limit, exception]
+    DocumentKind:
+      type: string
+      enum: [regulation, contract, policy, case]
+
+    HealthStatus:
+      type: object
+      additionalProperties: false
+      required: [status, version]
+      properties:
+        status: { type: string, const: ok }
+        version: { type: string }
+
+    ErrorDetail:
+      type: object
+      additionalProperties: false
+      required: [message, type]
+      properties:
+        location:
+          type: array
+          items:
+            anyOf: [{ type: string }, { type: integer }]
+          default: []
+        message: { type: string }
+        type: { type: string }
+
+    APIError:
+      type: object
+      additionalProperties: false
+      required: [code, message]
+      properties:
+        code: { type: string }
+        message: { type: string }
+        details:
+          anyOf:
+            - type: array
+              items: { $ref: "#/components/schemas/ErrorDetail" }
+            - type: "null"
+          default: null
+
+    RunProgress:
+      type: object
+      additionalProperties: false
+      required: [documents_total, documents_processed, percent]
+      properties:
+        documents_total: { type: integer, minimum: 0 }
+        documents_processed: { type: integer, minimum: 0 }
+        partitions_total:
+          type: integer
+          minimum: 0
+          default: 0
+          description: Reserved for Phase 2 Cloud Run Job progress.
+        partitions_complete:
+          type: integer
+          minimum: 0
+          default: 0
+          description: Reserved for Phase 2 Cloud Run Job progress.
+        percent: { type: number, minimum: 0, maximum: 100 }
+
+    Regulation:
+      type: object
+      additionalProperties: false
+      required: [reg_id, title, source_filename, synthetic]
+      properties:
+        reg_id: { type: string, minLength: 1 }
+        title: { type: string, minLength: 1 }
+        jurisdiction:
+          anyOf: [{ type: string }, { type: "null" }]
+          default: null
+        source_filename: { type: string, minLength: 1 }
+        synthetic: { type: boolean, const: true }
+
+    EvidenceReference:
+      type: object
+      additionalProperties: false
+      required: [doc_id, doc_kind, page, quote]
+      properties:
+        doc_id: { type: string, minLength: 1 }
+        doc_kind: { $ref: "#/components/schemas/DocumentKind" }
+        page: { type: integer, minimum: 1 }
+        quote: { type: string, minLength: 1 }
+
+    Obligation:
+      type: object
+      additionalProperties: false
+      required: [obligation_id, statement, type, evidence]
+      properties:
+        obligation_id: { type: string, minLength: 1 }
+        statement: { type: string, minLength: 1 }
+        type: { $ref: "#/components/schemas/ObligationType" }
+        exceptions:
+          type: array
+          items: { type: string }
+          default: []
+        effective_date:
+          anyOf: [{ type: string, format: date }, { type: "null" }]
+          default: null
+        evidence:
+          type: array
+          minItems: 1
+          items: { $ref: "#/components/schemas/EvidenceReference" }
+
+    FindingScores:
+      type: object
+      additionalProperties: false
+      required: [evidence_strength, source_authority, interpretation_confidence,
+        operational_severity, human_review_required]
+      properties:
+        evidence_strength: { type: number, minimum: 0, maximum: 1 }
+        source_authority: { $ref: "#/components/schemas/SourceAuthority" }
+        interpretation_confidence: { type: number, minimum: 0, maximum: 1 }
+        operational_severity: { $ref: "#/components/schemas/Severity" }
+        human_review_required: { type: boolean }
+
+    ProposedAction:
+      type: object
+      additionalProperties: false
+      required: [action_id, finding_id, type, autonomy, status, idempotency_key]
+      properties:
+        action_id: { type: string, minLength: 1 }
+        finding_id: { type: string, minLength: 1 }
+        type: { $ref: "#/components/schemas/ActionType" }
+        autonomy: { $ref: "#/components/schemas/ActionAutonomy" }
+        status: { $ref: "#/components/schemas/ActionStatus" }
+        idempotency_key: { type: string, minLength: 1 }
+
+    FindingSummary:
+      type: object
+      additionalProperties: false
+      required: [finding_id, run_id, target_id, relationship, severity, verdict, status,
+        human_review_required]
+      properties: &finding_summary_properties
+        finding_id: { type: string, minLength: 1 }
+        run_id: { type: string, minLength: 1 }
+        target_id: { type: string, minLength: 1 }
+        relationship: { $ref: "#/components/schemas/Relationship" }
+        severity: { $ref: "#/components/schemas/Severity" }
+        verdict: { $ref: "#/components/schemas/FindingVerdict" }
+        status: { $ref: "#/components/schemas/FindingStatus" }
+        human_review_required: { type: boolean }
+
+    AffectedCase:
+      type: object
+      additionalProperties: false
+      required: [case_id, summary, synthetic]
+      properties:
+        case_id: { type: string, minLength: 1 }
+        summary: { type: string, minLength: 1 }
+        signed_date:
+          anyOf: [{ type: string, format: date }, { type: "null" }]
+          default: null
+        synthetic: { type: boolean, const: true }
+
+    Finding:
+      type: object
+      additionalProperties: false
+      required: [finding_id, run_id, target_id, relationship, severity, verdict, status,
+        human_review_required, obligation, evidence_path, scores]
+      properties:
+        <<: *finding_summary_properties
+        obligation: { $ref: "#/components/schemas/Obligation" }
+        affected_case:
+          anyOf: [{ $ref: "#/components/schemas/AffectedCase" }, { type: "null" }]
+          default: null
+        evidence_path:
+          type: array
+          minItems: 1
+          items: { $ref: "#/components/schemas/EvidenceReference" }
+        scores: { $ref: "#/components/schemas/FindingScores" }
+        proposed_action:
+          anyOf: [{ $ref: "#/components/schemas/ProposedAction" }, { type: "null" }]
+          default: null
+
+    FindingList:
+      type: object
+      additionalProperties: false
+      required: [items, total]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/FindingSummary" }
+        total: { type: integer, minimum: 0 }
+
+    CounterfactualPreview:
+      type: object
+      additionalProperties: false
+      description: >-
+        Deterministic shadow-state output. Counts and IDs come from rerunning the same
+        matching and validation pipeline. Narrative is non-authoritative.
+      required: [action_id, shadow_run_id, baseline_finding_count, resolved_finding_ids,
+        unchanged_finding_ids, new_conflict_ids, remaining_high_risk_ids,
+        detected_finding_picture_improves]
+      properties:
+        action_id: { type: string, minLength: 1 }
+        shadow_run_id: { type: string, minLength: 1 }
+        baseline_finding_count: { type: integer, minimum: 0 }
+        resolved_finding_ids:
+          type: array
+          items: { type: string }
+        unchanged_finding_ids:
+          type: array
+          items: { type: string }
+        new_conflict_ids:
+          type: array
+          items: { type: string }
+        remaining_high_risk_ids:
+          type: array
+          items: { type: string }
+        detected_finding_picture_improves: { type: boolean }
+        narrative:
+          anyOf: [{ type: string }, { type: "null" }]
+          default: null
+
+    Approval:
+      type: object
+      additionalProperties: false
+      required: [approval_id, action_id, run_id, status]
+      properties:
+        approval_id: { type: string, minLength: 1 }
+        action_id: { type: string, minLength: 1 }
+        run_id: { type: string, minLength: 1 }
+        status: { $ref: "#/components/schemas/ApprovalStatus" }
+        decided_at:
+          anyOf: [{ type: string, format: date-time }, { type: "null" }]
+          default: null
+        decided_by:
+          anyOf: [{ type: string }, { type: "null" }]
+          default: null
+          description: >-
+            Backend-assigned reviewer identity. The unauthenticated synthetic demo uses
+            the controlled value demo-reviewer; clients must never submit or select it.
+        note:
+          anyOf: [{ type: string }, { type: "null" }]
+          default: null
+
+    ApprovalDecision:
+      type: object
+      additionalProperties: false
+      description: >-
+        Human decision input only. Reviewer identity is assigned by the backend and is
+        never accepted from the frontend.
+      required: [decision]
+      properties:
+        decision: { $ref: "#/components/schemas/ApprovalDecisionValue" }
+        note:
+          anyOf: [{ type: string }, { type: "null" }]
+          default: null
+
+    FindingsBySeverity:
+      type: object
+      additionalProperties: false
+      required: [low, medium, high]
+      properties:
+        low: { type: integer, minimum: 0 }
+        medium: { type: integer, minimum: 0 }
+        high: { type: integer, minimum: 0 }
+
+    Run:
+      type: object
+      additionalProperties: false
+      required: [run_id, state, created_at, updated_at, regulation, progress]
+      properties:
+        run_id: { type: string, minLength: 1 }
+        state: { $ref: "#/components/schemas/RunState" }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        regulation: { $ref: "#/components/schemas/Regulation" }
+        progress: { $ref: "#/components/schemas/RunProgress" }
+        findings_by_severity: { $ref: "#/components/schemas/FindingsBySeverity" }
+        pending_approvals:
+          type: array
+          items: { $ref: "#/components/schemas/Approval" }
+          default: []
+        completed_actions:
+          type: array
+          items: { $ref: "#/components/schemas/ProposedAction" }
+          default: []
+
+    AuditIdempotency:
+      type: object
+      additionalProperties: false
+      required: [duplicate_actions_prevented, duplicate_action_rate]
+      properties:
+        duplicate_actions_prevented: { type: integer, minimum: 0 }
+        duplicate_action_rate: { type: number, minimum: 0, maximum: 1 }
+    AuditRevalidation:
+      type: object
+      additionalProperties: false
+      required: [findings_resolved, findings_remaining]
+      properties:
+        findings_resolved: { type: integer, minimum: 0 }
+        findings_remaining: { type: integer, minimum: 0 }
+    AuditProcessing:
+      type: object
+      additionalProperties: false
+      required: [total_seconds, documents_processed]
+      properties:
+        total_seconds: { type: number, minimum: 0 }
+        documents_processed: { type: integer, minimum: 0 }
+    AuditEvaluation:
+      type: object
+      additionalProperties: false
+      required: [obligation_precision, impact_precision, impact_recall,
+        citation_correctness, false_escalation_rate, resume_success_rate]
+      properties:
+        obligation_precision: { type: number, minimum: 0, maximum: 1 }
+        impact_precision: { type: number, minimum: 0, maximum: 1 }
+        impact_recall: { type: number, minimum: 0, maximum: 1 }
+        citation_correctness: { type: number, minimum: 0, maximum: 1 }
+        false_escalation_rate: { type: number, minimum: 0, maximum: 1 }
+        resume_success_rate: { type: number, minimum: 0, maximum: 1 }
+
+    AuditReport:
+      type: object
+      additionalProperties: false
+      required: [run_id, generated_at, executed_actions, idempotency, revalidation, processing]
+      properties:
+        run_id: { type: string, minLength: 1 }
+        generated_at: { type: string, format: date-time }
+        executed_actions:
+          type: array
+          items: { $ref: "#/components/schemas/ProposedAction" }
+        idempotency: { $ref: "#/components/schemas/AuditIdempotency" }
+        revalidation: { $ref: "#/components/schemas/AuditRevalidation" }
+        processing: { $ref: "#/components/schemas/AuditProcessing" }
+        evaluation:
+          anyOf: [{ $ref: "#/components/schemas/AuditEvaluation" }, { type: "null" }]
+          default: null
+        audit_package_url:
+          anyOf: [{ type: string }, { type: "null" }]
+          default: null
