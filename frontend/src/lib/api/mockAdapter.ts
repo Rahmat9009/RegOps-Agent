@@ -40,6 +40,7 @@ import {
   mockFindingSummaries,
   pendingApproval,
   reviewTaskAction,
+  type RunOutcome,
 } from "./mockData";
 
 /** Wall-clock time spent in each pipeline state. */
@@ -47,13 +48,18 @@ const STEP_MS = 2200;
 /** Artificial latency, so loading states are real rather than theoretical. */
 const LATENCY_MS = 140;
 
-const STORAGE_KEY = "regops.mock.runs.v1";
+const STORAGE_KEY = "regops.mock.runs.v2";
 
-type Phase = "pre_approval" | "post_approval" | "rejected";
+type Phase = "pre_approval" | "post_approval";
 
 interface RunRecord {
   run: Run;
   phase: Phase;
+  /**
+   * The recorded business outcome, or null while no decision has been made.
+   * A rejection is a valid terminal outcome — the run still completes.
+   */
+  decision: RunOutcome | null;
   /** Epoch ms at which the current phase began. */
   phaseStartedAt: number;
   approvals: Record<string, Approval>;
@@ -115,6 +121,7 @@ export class MockRegOpsApi implements RegOpsApi {
     this.records.set(runId, {
       run,
       phase: "pre_approval",
+      decision: null,
       phaseStartedAt: Date.now(),
       approvals: {},
     });
@@ -224,13 +231,12 @@ export class MockRegOpsApi implements RegOpsApi {
     record.run.pending_approvals = [];
     record.phaseStartedAt = Date.now();
 
-    if (body.decision === "approve") {
-      record.phase = "post_approval";
-      this.applyState(record, "EXECUTING");
-    } else {
-      record.phase = "rejected";
-      this.applyState(record, "FAILED");
-    }
+    // Both outcomes let the run finish. A rejection is a decision, not a failure:
+    // the automatic review task still executes and the run still reaches COMPLETED.
+    // Only the amendment differs — rejected, and never executed.
+    record.decision = body.decision === "approve" ? "approved" : "rejected";
+    record.phase = "post_approval";
+    this.applyState(record, "EXECUTING");
 
     this.persist();
     return clone(decision);
@@ -248,7 +254,7 @@ export class MockRegOpsApi implements RegOpsApi {
         status: 404,
       });
     }
-    return clone(mockAudit(runId, record.run.updated_at));
+    return clone(mockAudit(runId, record.run.updated_at, record.decision ?? "approved"));
   }
 
   /* ---------------------------------------------------------------- internal */
@@ -271,8 +277,6 @@ export class MockRegOpsApi implements RegOpsApi {
 
   /** Advance the run's state based on how long it has been in the current phase. */
   private advance(record: RunRecord): void {
-    if (record.phase === "rejected") return;
-
     const script =
       record.phase === "pre_approval" ? MOCK_PRE_APPROVAL_STATES : MOCK_POST_APPROVAL_STATES;
     const elapsedSteps = Math.floor((Date.now() - record.phaseStartedAt) / STEP_MS);
@@ -306,22 +310,25 @@ export class MockRegOpsApi implements RegOpsApi {
     }
 
     if (state === "COMPLETED") {
-      record.run.completed_actions = [
-        amendmentAction(record.run.run_id, "APPROVED_DRAFT"),
-        reviewTaskAction(record.run.run_id, "EXECUTED"),
-      ];
-    }
-
-    if (state === "FAILED") {
-      record.run.completed_actions = [amendmentAction(record.run.run_id, "REJECTED")];
+      // A rejected amendment was never executed, so it must not appear here.
+      record.run.completed_actions =
+        record.decision === "rejected"
+          ? [reviewTaskAction(record.run.run_id, "EXECUTED")]
+          : [
+              amendmentAction(record.run.run_id, "APPROVED_DRAFT"),
+              reviewTaskAction(record.run.run_id, "EXECUTED"),
+            ];
     }
   }
 
   /** Reflect the approval outcome in the finding the amendment targets. */
   private applyOutcome(record: RunRecord, summary: FindingSummary): FindingSummary {
     if (summary.finding_id !== "FND-0001") return { ...summary };
-    if (record.phase === "rejected") return { ...summary, status: "OPEN" };
-    if (record.run.state === "COMPLETED") return { ...summary, status: "RESOLVED" };
+    // Rejection leaves the conflict unaddressed: the finding stays OPEN.
+    if (record.decision === "rejected") return { ...summary, status: "OPEN" };
+    if (record.decision === "approved" && record.run.state === "COMPLETED") {
+      return { ...summary, status: "RESOLVED" };
+    }
     if (record.run.state === "AWAITING_APPROVAL") return { ...summary, status: "AWAITING_APPROVAL" };
     return { ...summary, status: "OPEN" };
   }
@@ -332,8 +339,10 @@ export class MockRegOpsApi implements RegOpsApi {
         ? "EXECUTED"
         : "PENDING";
     }
-    if (record.phase === "rejected") return "REJECTED";
-    if (record.run.state === "COMPLETED") return "APPROVED_DRAFT";
+    if (record.decision === "rejected") return "REJECTED";
+    if (record.decision === "approved") {
+      return record.run.state === "COMPLETED" ? "APPROVED_DRAFT" : "PENDING";
+    }
     if (record.run.state === "AWAITING_APPROVAL") return "AWAITING_APPROVAL";
     return "PENDING";
   }

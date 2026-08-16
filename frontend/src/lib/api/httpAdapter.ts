@@ -123,15 +123,31 @@ export class HttpRegOpsApi implements RegOpsApi {
       });
     }
 
-    const payload = await readJson(response);
+    let text: string;
+    try {
+      text = await response.text();
+    } catch (cause) {
+      throw new RegOpsApiError({
+        code: "network_error",
+        message:
+          cause instanceof Error
+            ? `The response body could not be read: ${cause.message}`
+            : "The response body could not be read.",
+        status: 0,
+        kind: "network",
+      });
+    }
+
+    const parsed = tryParseJson(text);
 
     if (!response.ok) {
-      if (isAPIErrorBody(payload)) {
+      // Non-2xx keeps the contract's structured APIError handling.
+      if (isAPIErrorBody(parsed)) {
         throw new RegOpsApiError({
-          code: payload.code,
-          message: payload.message,
+          code: parsed.code,
+          message: parsed.message,
           status: response.status,
-          details: payload.details ?? [],
+          details: parsed.details ?? [],
         });
       }
       throw new RegOpsApiError({
@@ -142,17 +158,50 @@ export class HttpRegOpsApi implements RegOpsApi {
       });
     }
 
-    return payload as T;
+    // A 2xx must carry a JSON object. Every successful response in the contract is
+    // a schema object, so an empty, malformed, non-JSON or non-object body is a
+    // broken response — it is reported, never cast to T.
+    if (text.trim().length === 0) {
+      throw invalidResponse(response.status, "The API returned an empty response body.");
+    }
+    if (parsed === undefined) {
+      throw invalidResponse(
+        response.status,
+        `The API returned a body that is not valid JSON: ${preview(text)}`,
+      );
+    }
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+      throw invalidResponse(
+        response.status,
+        `The API returned ${describe(parsed)} where a JSON object was expected.`,
+      );
+    }
+
+    return parsed as T;
   }
 }
 
-async function readJson(response: Response): Promise<unknown> {
-  const text = await response.text();
-  if (text.length === 0) return null;
+/** Returns `undefined` when the text is not valid JSON (JSON `null` parses to `null`). */
+function tryParseJson(text: string): unknown {
+  if (text.trim().length === 0) return undefined;
   try {
     return JSON.parse(text) as unknown;
   } catch {
-    // A non-JSON body from a proxy or gateway is still a failure we must report.
-    return { code: "invalid_response", message: text.slice(0, 500) };
+    return undefined;
   }
+}
+
+function invalidResponse(status: number, message: string): RegOpsApiError {
+  return new RegOpsApiError({ code: "invalid_response", message, status, kind: "unknown" });
+}
+
+function describe(value: unknown): string {
+  if (value === null) return "a JSON null";
+  if (Array.isArray(value)) return "a JSON array";
+  return `a JSON ${typeof value}`;
+}
+
+function preview(text: string): string {
+  const trimmed = text.trim();
+  return trimmed.length > 200 ? `${trimmed.slice(0, 200)}…` : trimmed;
 }

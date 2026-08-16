@@ -183,7 +183,7 @@ export function ApprovalPage() {
           outcome
             ? outcome.status === "APPROVED"
               ? "This action was approved. The run continues to execution and revalidation."
-              : "This action was rejected. Nothing was executed and the run will not continue."
+              : "This action was rejected. The amendment was not executed; the run continues and completes without it."
             : "A consequential action is paused here. Nothing is written until you decide."
         }
         crumbs={crumbs}
@@ -398,8 +398,9 @@ export function ApprovalPage() {
             <Notice tone="review" title="What approving does">
               Approving stores an <Mono>APPROVED_DRAFT</Mono> amendment against a synthetic
               contract&rsquo;s shadow copy and lets the run continue to execution and revalidation.
-              It does not change a real contract, and it is not a legal determination. Rejecting
-              records the rejection and executes nothing.
+              It does not change a real contract, and it is not a legal determination. Rejecting is
+              an equally valid outcome: the amendment is never executed, the finding stays open, and
+              the run still completes with an audit record.
             </Notice>
 
             <div className="row">
@@ -443,7 +444,9 @@ function DecisionOutcome({ decision, runId }: { decision: Approval; runId: strin
   return (
     <Notice
       tone={approved ? "verified" : "critical"}
-      title={approved ? "Approved — recorded as a draft" : "Rejected — nothing was executed"}
+      title={
+        approved ? "Approved — recorded as a draft" : "Rejected — the amendment was not executed"
+      }
       live
     >
       <dl className="dl">

@@ -1,5 +1,6 @@
 import { fileURLToPath, URL } from "node:url";
-import { defineConfig } from "vite";
+// `vitest/config` re-exports Vite's defineConfig and adds the `test` section.
+import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 
 // The frontend never hardcodes a backend host. In `http` mode the API layer calls
@@ -20,5 +21,10 @@ export default defineConfig({
         changeOrigin: true,
       },
     },
+  },
+  test: {
+    // The suite covers the API layer and pure helpers; no DOM is needed.
+    environment: "node",
+    include: ["src/**/*.test.ts"],
   },
 });

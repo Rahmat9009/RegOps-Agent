@@ -18,7 +18,11 @@ The app runs against the **mock adapter** by default — no backend required.
 | `npm run build`     | Typecheck, then production build into `dist/`        |
 | `npm run typecheck` | `tsc --noEmit` over `src/` and the Node-side configs |
 | `npm run lint`      | ESLint (flat config, typescript-eslint)              |
+| `npm test`          | Vitest, single run (`test:watch` for watch mode)     |
 | `npm run preview`   | Serve the built `dist/`                              |
+
+Tests cover the API layer and pure helpers (`src/**/*.test.ts`) and run in a `node`
+environment — no DOM, no component rendering.
 
 TypeScript runs in `strict` mode with `noUnusedLocals`, `noUnusedParameters`,
 `noFallthroughCasesInSwitch`, `noImplicitOverride` and `verbatimModuleSyntax`.

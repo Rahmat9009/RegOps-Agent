@@ -100,6 +100,11 @@ export const MOCK_APPROVAL_ID = "APR-0001";
 export const MOCK_AMENDMENT_ACTION_ID = "ACT-0001";
 export const MOCK_REVIEW_TASK_ACTION_ID = "ACT-0002";
 
+/** Findings detected before any remediation. Shared by the audit and the preview. */
+export const MOCK_BASELINE_FINDING_COUNT = 37;
+/** Findings the approved amendment resolves. Rejection resolves none. */
+export const MOCK_RESOLVED_ON_APPROVAL = 31;
+
 /* ------------------------------------------------------------ constructors */
 
 export function baseRun(runId: string, sourceFilename: string, createdAt: string): Run {
@@ -343,11 +348,11 @@ export function mockCounterfactual(actionId: string, runId: string): Counterfact
   return {
     action_id: actionId,
     shadow_run_id: `SHADOW-${runId}`,
-    baseline_finding_count: 37,
+    baseline_finding_count: MOCK_BASELINE_FINDING_COUNT,
     // Illustrative IDs. In the real backend these come from rerunning the same
     // matching and validation pipeline against the shadow copy.
     resolved_finding_ids: Array.from(
-      { length: 31 },
+      { length: MOCK_RESOLVED_ON_APPROVAL },
       (_, i) => `FND-${String(i + 1).padStart(4, "0")}`,
     ),
     unchanged_finding_ids: ["FND-0032", "FND-0033", "FND-0034", "FND-0035"],
@@ -361,16 +366,34 @@ export function mockCounterfactual(actionId: string, runId: string): Counterfact
 
 /* ----------------------------------------------------------------- audit */
 
-export function mockAudit(runId: string, generatedAt: string): AuditReport {
+/** The business outcome of the run's approval decision. */
+export type RunOutcome = "approved" | "rejected";
+
+/**
+ * A rejection is a valid terminal business outcome, not a failure: the run still
+ * completes, the automatic review task still executed, and the rejected amendment
+ * is absent from `executed_actions` because it was never executed. Nothing is
+ * resolved, so every baseline finding remains.
+ */
+export function mockAudit(
+  runId: string,
+  generatedAt: string,
+  outcome: RunOutcome = "approved",
+): AuditReport {
+  const approved = outcome === "approved";
+  const resolved = approved ? MOCK_RESOLVED_ON_APPROVAL : 0;
+
   return {
     run_id: runId,
     generated_at: generatedAt,
-    executed_actions: [
-      amendmentAction(runId, "APPROVED_DRAFT"),
-      reviewTaskAction(runId, "EXECUTED"),
-    ],
+    executed_actions: approved
+      ? [amendmentAction(runId, "APPROVED_DRAFT"), reviewTaskAction(runId, "EXECUTED")]
+      : [reviewTaskAction(runId, "EXECUTED")],
     idempotency: { duplicate_actions_prevented: 1, duplicate_action_rate: 0 },
-    revalidation: { findings_resolved: 31, findings_remaining: 6 },
+    revalidation: {
+      findings_resolved: resolved,
+      findings_remaining: MOCK_BASELINE_FINDING_COUNT - resolved,
+    },
     processing: { total_seconds: 268.4, documents_processed: 300 },
     evaluation: {
       obligation_precision: 0.94,

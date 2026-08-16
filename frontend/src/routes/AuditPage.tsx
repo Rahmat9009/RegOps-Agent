@@ -18,6 +18,7 @@ import {
 import { api, type AuditEvaluation, type AuditReport } from "@/lib/api";
 import { formatCount, formatDateTime, formatRatio, formatSeconds } from "@/lib/format";
 import { ACTION_AUTONOMY, ACTION_STATUS, ACTION_TYPE } from "@/lib/presentation";
+import { isSafeAuditPackageUrl } from "@/lib/url";
 import { useAsync } from "@/hooks/useAsync";
 import { Mono, StatusBadge } from "@/components/Badge";
 import { Notice } from "@/components/Notice";
@@ -97,7 +98,12 @@ export function AuditPage() {
 }
 
 function AuditContent({ report, onReload }: { report: AuditReport; onReload: () => void }) {
-  const packageUrl = report.audit_package_url;
+  // The URL is validated before it reaches an href — see lib/url.ts.
+  const packageUrl = isSafeAuditPackageUrl(report.audit_package_url)
+    ? report.audit_package_url
+    : null;
+  const packageUrlRejected =
+    report.audit_package_url != null && report.audit_package_url !== "" && packageUrl === null;
 
   return (
     <>
@@ -212,32 +218,33 @@ function AuditContent({ report, onReload }: { report: AuditReport; onReload: () 
         <Panel
           title="Idempotency"
           icon={Repeat}
-          description="Repeated actions must not take effect twice."
+          description="Every action carries an idempotency key. Repeated attempts are detected and stopped before execution."
         >
-          <div className="grid grid--2">
-            <Stat
-              label="Duplicates prevented"
-              value={formatCount(report.idempotency.duplicate_actions_prevented)}
-              tone="verified"
-              note="Blocked by the idempotency key"
-            />
-            <Stat
-              label="Duplicate action rate"
-              value={formatRatio(report.idempotency.duplicate_action_rate)}
-              tone={report.idempotency.duplicate_action_rate > 0 ? "review" : "verified"}
-              note={
-                report.idempotency.duplicate_action_rate > 0
-                  ? "Some duplicates reached execution"
-                  : "No duplicate reached execution"
-              }
-            />
+          <div className="stack">
+            <div className="grid grid--2">
+              <Stat
+                label="Duplicate attempts prevented"
+                value={formatCount(report.idempotency.duplicate_actions_prevented)}
+                tone="verified"
+                note="Detected by idempotency key and stopped"
+              />
+              <Stat
+                label="Duplicate attempt rate"
+                value={formatRatio(report.idempotency.duplicate_action_rate)}
+                note="Share of attempts that were duplicates"
+              />
+            </div>
+            <p className="field__hint">
+              Both figures count action attempts that were detected as duplicates and prevented.
+              They do not indicate that any duplicate action was executed.
+            </p>
           </div>
         </Panel>
 
         <Panel
           title="Revalidation"
           icon={RefreshCw}
-          description="The pipeline was rerun to confirm the approved remediation was applied to the detected finding."
+          description="The pipeline was rerun after execution to confirm which detected findings the run's actions resolved. A run whose amendment was rejected resolves none."
         >
           <div className="grid grid--2">
             <Stat
@@ -309,9 +316,18 @@ function AuditContent({ report, onReload }: { report: AuditReport; onReload: () 
               Download audit package
             </button>
             <p className="field__hint" id="package-unavailable">
-              Unavailable: the API returned no <Mono>audit_package_url</Mono> for this run. The
-              control stays disabled rather than pointing at a URL this console invented. See CR-006
-              in <Mono>frontend/CONTRACT_REQUESTS.md</Mono>.
+              {packageUrlRejected ? (
+                <>
+                  Unavailable: the API returned an <Mono>audit_package_url</Mono> that is not an
+                  absolute <Mono>https://</Mono> URL, so this console will not turn it into a link.
+                </>
+              ) : (
+                <>
+                  Unavailable: the API returned no <Mono>audit_package_url</Mono> for this run. The
+                  control stays disabled rather than pointing at a URL this console invented.
+                </>
+              )}{" "}
+              See CR-006 in <Mono>frontend/CONTRACT_REQUESTS.md</Mono>.
             </p>
           </div>
         )}
