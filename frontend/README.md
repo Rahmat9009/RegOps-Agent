@@ -1,28 +1,85 @@
-# frontend/ — owned by Claude Code
+# frontend/ — RegOps console (owned by Claude Code)
 
-React + Vite + TypeScript UI for RegOps. See root `CLAUDE.md` for the full brief, the 8 required views, and the design direction.
+React + Vite + TypeScript UI for RegOps. See root `CLAUDE.md` for the brief, the eight
+required views, and the design direction.
 
-## What's already here (do not fight it — build on it)
-- **`src/lib/api/`** — the frozen, typed API layer. All data access goes through it.
-  - `types.ts` — types mirrored from `contracts/openapi.yaml` (frozen).
-  - `client.ts` — the `RegOpsApi` interface every component depends on.
-  - `mockAdapter.ts` — in-memory implementation that drives the full demo workflow.
-  - `mockData.ts` — synthetic Bangladesh fee-rule fixtures (labeled synthetic).
-  - `index.ts` — exports `api` (the singleton) and everything components need.
+## Getting started
 
-Usage in a component:
-```ts
-import { api, type Run } from "@/lib/api";
-const run = await api.getRun(runId); // poll every 2s for progress
+```bash
+npm install
+npm run dev
 ```
 
-## Your job
-1. Scaffold the Vite app around `src/lib/api/` (add `package.json`, `vite.config.ts`, `tsconfig.json`, `index.html`, `src/main.tsx`, routing, components).
-2. Build the 8 views (root `CLAUDE.md`) against `api`.
-3. Keep **all** data access behind `src/lib/api/`. No `fetch` in components.
-4. Framer Motion only where motion aids comprehension; Lucide icons; accessible semantic HTML; status = text + icon + color (never color alone).
+The app runs against the **mock adapter** by default — no backend required.
+
+| Script              | What it does                                        |
+| ------------------- | --------------------------------------------------- |
+| `npm run dev`       | Vite dev server on http://localhost:5173             |
+| `npm run build`     | Typecheck, then production build into `dist/`        |
+| `npm run typecheck` | `tsc --noEmit` over `src/` and the Node-side configs |
+| `npm run lint`      | ESLint (flat config, typescript-eslint)              |
+| `npm run preview`   | Serve the built `dist/`                              |
+
+TypeScript runs in `strict` mode with `noUnusedLocals`, `noUnusedParameters`,
+`noFallthroughCasesInSwitch`, `noImplicitOverride` and `verbatimModuleSyntax`.
+
+## Choosing an adapter
+
+`src/lib/api/index.ts` picks the adapter from an environment variable. Copy
+`.env.example` to `.env.local` to change it.
+
+```
+VITE_API_MODE=mock          # in-memory workflow (default)
+VITE_API_MODE=http          # real HTTP client
+VITE_API_BASE_URL=/api/v1   # base path for http mode
+```
+
+In dev, `/api` is proxied to `http://localhost:8080` (override with the
+`REGOPS_API_PROXY` environment variable). Switching adapters requires **no component
+changes** — both implement the same `RegOpsApi` interface.
+
+## Layout
+
+```
+src/
+  lib/api/          the only place data comes from
+    types.ts        hand-mirrored from contracts/openapi.yaml (frozen)
+    client.ts       RegOpsApi — one method per operationId
+    errors.ts       RegOpsApiError; every adapter throws this
+    httpAdapter.ts  real fetch client (multipart POST /runs)
+    mockAdapter.ts  in-memory workflow driver
+    mockData.ts     synthetic fixtures
+    index.ts        adapter factory + the `api` singleton
+  lib/presentation.ts  enum -> { label, icon, tone } for every status
+  lib/format.ts        display formatting
+  lib/activeRun.ts     which run this browser is looking at (browser state)
+  hooks/               useAsync, useRunPolling (2 s polling)
+  components/          shell, panels, badges, meters, loading/empty/error states
+  routes/              one file per view
+  styles/              tokens.css, base.css, app.css
+```
+
+## Screens
+
+| Route                      | View                             |
+| -------------------------- | -------------------------------- |
+| `/`                        | Operations dashboard             |
+| `/intake`                  | Regulation intake                |
+| `/runs/:runId`             | Run detail                       |
+| `/runs/:runId/findings`    | Findings list                    |
+| `/findings/:findingId`     | Evidence detail (evidence chain) |
+| `/actions/:actionId/preview` | Counterfactual shadow-state preview |
+| `/approvals/:approvalId?run=` | Approval decision             |
+| `/runs/:runId/audit`       | Audit report                     |
 
 ## Rules
-- Do not modify `backend/`, `contracts/`, or `infrastructure/`.
-- Do not invent endpoints beyond `contracts/openapi.yaml`. Need something more? Add a line to `docs/frontend-notes.md` for Codex.
-- Switching to the real backend later = implement `HttpRegOpsApi` and flip `USE_REAL_API` in `index.ts`. Components must not change.
+
+- Do not modify `backend/`, `contracts/`, `infrastructure/`, `docs/`, or root files.
+- Do not invent endpoints beyond `contracts/openapi.yaml`. Gaps go in
+  `frontend/CONTRACT_REQUESTS.md` for Codex.
+- No `fetch` in components — all data access goes through `src/lib/api/`.
+- Every status is **icon + text + colour**; colour never carries meaning alone.
+- The frontend never submits `decided_by`. Reviewer identity is backend-assigned.
+- Approval produces an `APPROVED_DRAFT` against a synthetic contract's **shadow copy**.
+  Nothing in this UI may imply a real contract was modified or that legal compliance
+  was determined.

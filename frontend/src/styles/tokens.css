@@ -1,0 +1,134 @@
+/* tokens.css — The whole palette. Restrained neutrals plus four semantic colours:
+   blue = information, amber = review, red = high severity, green = verified
+   completion only. Colour never carries meaning alone; every status in the UI is
+   rendered as icon + text + colour. */
+
+:root {
+  color-scheme: light dark;
+
+  /* Surfaces */
+  --canvas: #f4f6f8;
+  --surface: #ffffff;
+  --surface-sunken: #f8fafb;
+  --surface-raised: #ffffff;
+  --overlay: rgb(18 24 31 / 45%);
+
+  /* Lines */
+  --border: #dde2e8;
+  --border-strong: #c0c8d2;
+
+  /* Ink */
+  --ink: #101720;
+  --ink-2: #39434f;
+  --ink-3: #64707e;
+  --ink-inverse: #ffffff;
+
+  /* Blue — information */
+  --info-fg: #14509a;
+  --info-bg: #e8f0fb;
+  --info-border: #b8d0ee;
+  --info-solid: #1a63bd;
+
+  /* Amber — review / attention */
+  --review-fg: #8a5200;
+  --review-bg: #fdf2e0;
+  --review-border: #f0d5a5;
+  --review-solid: #b06c00;
+
+  /* Red — high severity / failure */
+  --critical-fg: #9c211b;
+  --critical-bg: #fceceb;
+  --critical-border: #f2c1bd;
+  --critical-solid: #b3271f;
+
+  /* Green — verified completion only */
+  --verified-fg: #14603d;
+  --verified-bg: #e6f3ec;
+  --verified-border: #b3ddc6;
+  --verified-solid: #1a7a4c;
+
+  /* Neutral status */
+  --neutral-fg: #414c58;
+  --neutral-bg: #eef1f4;
+  --neutral-border: #d5dbe2;
+
+  --focus-ring: #1a63bd;
+
+  /* Type */
+  --font-sans:
+    "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+    sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", "Cascadia Mono", "Consolas", monospace;
+
+  --step--1: 0.8125rem;
+  --step-0: 0.9375rem;
+  --step-1: 1.0625rem;
+  --step-2: 1.3125rem;
+  --step-3: 1.625rem;
+  --step-4: 2rem;
+
+  /* Space */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-7: 3rem;
+
+  --radius-sm: 4px;
+  --radius: 6px;
+  --radius-lg: 10px;
+
+  --shadow-sm: 0 1px 2px rgb(16 23 32 / 6%);
+  --shadow: 0 1px 3px rgb(16 23 32 / 8%), 0 6px 16px rgb(16 23 32 / 5%);
+
+  --sidebar-width: 15.5rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --canvas: #0e1319;
+    --surface: #161d25;
+    --surface-sunken: #121820;
+    --surface-raised: #1b232c;
+    --overlay: rgb(4 7 10 / 62%);
+
+    --border: #29323d;
+    --border-strong: #3c4756;
+
+    --ink: #eef2f6;
+    --ink-2: #c2cbd5;
+    --ink-3: #8d99a6;
+    --ink-inverse: #0e1319;
+
+    --info-fg: #9ec5f5;
+    --info-bg: #14243a;
+    --info-border: #2b445f;
+    --info-solid: #4a90e2;
+
+    --review-fg: #f0c078;
+    --review-bg: #33240c;
+    --review-border: #5b431a;
+    --review-solid: #d08c1a;
+
+    --critical-fg: #f4a9a2;
+    --critical-bg: #371816;
+    --critical-border: #5d2b26;
+    --critical-solid: #d9534a;
+
+    --verified-fg: #86d0a8;
+    --verified-bg: #10291d;
+    --verified-border: #23492f;
+    --verified-solid: #35a06b;
+
+    --neutral-fg: #b6c0cb;
+    --neutral-bg: #1f272f;
+    --neutral-border: #333d48;
+
+    --focus-ring: #6ba8ec;
+
+    --shadow-sm: 0 1px 2px rgb(0 0 0 / 30%);
+    --shadow: 0 1px 3px rgb(0 0 0 / 35%), 0 6px 16px rgb(0 0 0 / 28%);
+  }
+}
