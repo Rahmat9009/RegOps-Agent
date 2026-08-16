@@ -117,6 +117,7 @@ describe("HttpRegOpsApi request construction", () => {
     approval_id: "APR-0001",
     action_id: "ACT-0001",
     run_id: "RUN-001",
+    finding_id: "FND-0001",
     status: "APPROVED",
     decided_at: "2026-08-16T09:04:00Z",
     // The backend assigns this. It must come back in the response and never go out.
@@ -180,14 +181,66 @@ describe("HttpRegOpsApi request construction", () => {
     // The browser must set the multipart boundary itself.
     const headers = call?.init.headers as Record<string, string>;
     expect(headers).not.toHaveProperty("Content-Type");
+    expect(headers).not.toHaveProperty("content-type");
   });
 
+  it("accepts the backend-assigned finding relationship from the response", async () => {
+    const { fetchImpl } = stubFetch(jsonResponse(approval));
+    const api = new HttpRegOpsApi({ fetchImpl });
+
+    const result = await api.decideApproval("APR-0001", { decision: "approve" });
+
+    // The approval screen reads its finding from here, never from an action scan.
+    expect(result.finding_id).toBe("FND-0001");
+  });
+
+});
+
+describe("HttpRegOpsApi findings query construction", () => {
+  const emptyList = { items: [], total: 0, limit: 25, offset: 0, by_severity: { low: 0, medium: 0, high: 0 } };
+
   it("builds findings query parameters only for supplied filters", async () => {
-    const { fetchImpl, calls } = stubFetch(jsonResponse({ items: [], total: 0 }));
+    const { fetchImpl, calls } = stubFetch(jsonResponse(emptyList));
     const api = new HttpRegOpsApi({ fetchImpl });
 
     await api.listRunFindings("RUN-001", { severity: "high", q: null });
 
     expect(calls[0]?.url).toBe("/api/v1/runs/RUN-001/findings?severity=high");
+  });
+
+  it("sends severity, q, limit and offset together", async () => {
+    const { fetchImpl, calls } = stubFetch(jsonResponse(emptyList));
+    const api = new HttpRegOpsApi({ fetchImpl });
+
+    await api.listRunFindings("RUN-001", {
+      severity: "medium",
+      q: "placement fee",
+      limit: 25,
+      offset: 50,
+    });
+
+    const query = new URL(String(calls[0]?.url), "https://example.test").searchParams;
+    expect(query.get("severity")).toBe("medium");
+    expect(query.get("q")).toBe("placement fee");
+    expect(query.get("limit")).toBe("25");
+    expect(query.get("offset")).toBe("50");
+  });
+
+  it("sends offset=0 rather than dropping a falsy value", async () => {
+    const { fetchImpl, calls } = stubFetch(jsonResponse(emptyList));
+    const api = new HttpRegOpsApi({ fetchImpl });
+
+    await api.listRunFindings("RUN-001", { limit: 25, offset: 0 });
+
+    expect(calls[0]?.url).toBe("/api/v1/runs/RUN-001/findings?limit=25&offset=0");
+  });
+
+  it("omits pagination parameters that were not supplied", async () => {
+    const { fetchImpl, calls } = stubFetch(jsonResponse(emptyList));
+    const api = new HttpRegOpsApi({ fetchImpl });
+
+    await api.listRunFindings("RUN-001");
+
+    expect(calls[0]?.url).toBe("/api/v1/runs/RUN-001/findings");
   });
 });

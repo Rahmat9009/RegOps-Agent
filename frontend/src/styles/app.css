@@ -1049,10 +1049,34 @@
   white-space: nowrap;
 }
 
+/* A secondary filters row: the severity counts for the whole filtered result. */
+.filters--counts {
+  gap: var(--space-3);
+  align-items: center;
+}
+
 .chip-row {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
+}
+
+/* ---------------------------------------------------------------- pager */
+
+.pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  border-top: 1px solid var(--border);
+}
+
+.pager__status {
+  font-size: var(--step--1);
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
 }
 
 .id-list {
@@ -1189,7 +1213,18 @@
 
   .panel__head,
   .panel__body,
-  .filters {
+  .filters,
+  .pager {
     padding-inline: var(--space-4);
+  }
+
+  /* At 375px the pager reads as a stack rather than a squeezed row. */
+  .pager {
+    justify-content: flex-start;
+  }
+
+  .pager__status {
+    order: -1;
+    flex-basis: 100%;
   }
 }

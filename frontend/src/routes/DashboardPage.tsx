@@ -22,7 +22,13 @@ import {
 import type { Run } from "@/lib/api";
 import { clearActiveRunId, getActiveRunId } from "@/lib/activeRun";
 import { formatCount, formatDateTime, formatPercent, pluralize } from "@/lib/format";
-import { ACTION_STATUS, ACTION_TYPE, APPROVAL_STATUS, RUN_STATE } from "@/lib/presentation";
+import {
+  ACTION_STATUS,
+  ACTION_TYPE,
+  APPROVAL_STATUS,
+  RUN_STATE,
+  recoveryDescriptor,
+} from "@/lib/presentation";
 import { useRunPolling } from "@/hooks/useRunPolling";
 import { Mono, StatusBadge } from "@/components/Badge";
 import { Notice } from "@/components/Notice";
@@ -338,14 +344,32 @@ function DashboardContent({
 function RecoveryNotice({ run }: { run: Run }) {
   const complete = run.progress.partitions_complete ?? 0;
   const total = run.progress.partitions_total ?? 0;
+  const recovery = run.recovery;
 
   return (
     <Notice tone="review" title="Recoverable failure — retrying" icon={RefreshCw} live>
-      A partition failed and the run is resuming from its last checkpoint. Processing continues
-      automatically; no action is required from you.{" "}
-      {total > 0 ? `${pluralize(complete, "partition")} of ${formatCount(total)} completed before the failure.` : null}{" "}
-      The API does not yet report the failed partition index or retry count (CR-003), so those are
-      not shown rather than guessed.
+      <p>
+        A partition failed and the run is resuming from its last checkpoint. Processing continues
+        automatically; no action is required from you.{" "}
+        {total > 0
+          ? `${pluralize(complete, "partition")} of ${formatCount(total)} completed before the failure.`
+          : null}
+      </p>
+      {recovery ? (
+        <p>
+          {recoveryDescriptor(recovery).description}{" "}
+          {pluralize(recovery.attempt_count, "attempt")} recorded
+          {recovery.last_error_code ? (
+            <>
+              {" "}
+              · <Mono>{recovery.last_error_code}</Mono>
+            </>
+          ) : null}
+          . <Link to={`/runs/${run.run_id}`}>Open run detail</Link> for the full recovery record.
+        </p>
+      ) : (
+        <p>The API returned no recovery record for this run, so none is shown.</p>
+      )}
     </Notice>
   );
 }

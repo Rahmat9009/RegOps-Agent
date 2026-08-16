@@ -60,6 +60,16 @@ export class HttpRegOpsApi implements RegOpsApi {
     const query = new URLSearchParams();
     if (params?.severity) query.set("severity", params.severity);
     if (params?.q) query.set("q", params.q);
+    // `offset` is legitimately 0, so these are sent whenever a finite number was
+    // supplied rather than whenever the value is truthy.
+    const limit = params?.limit;
+    const offset = params?.offset;
+    if (typeof limit === "number" && Number.isFinite(limit)) {
+      query.set("limit", String(Math.trunc(limit)));
+    }
+    if (typeof offset === "number" && Number.isFinite(offset)) {
+      query.set("offset", String(Math.trunc(offset)));
+    }
     const queryString = query.toString();
     const suffix = queryString ? `?${queryString}` : "";
     return this.request<FindingList>("GET", `/runs/${encodeURIComponent(runId)}/findings${suffix}`);

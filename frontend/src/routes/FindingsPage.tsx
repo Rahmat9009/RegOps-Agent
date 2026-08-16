@@ -1,17 +1,27 @@
-// FindingsPage — View 4: findings list with search and filters.
+// FindingsPage — View 4: findings list with search, filters and pagination.
 //
-// `GET /runs/{run_id}/findings` returns FindingSummary records, which carry
-// severity, verdict, status and the human-review flag but not the score set. The
-// four score fields this view is required to show live on `Finding`, so each listed
-// row is hydrated with `GET /findings/{finding_id}`. That is an N+1 call pattern;
-// CONTRACT_REQUESTS.md CR-007 asks for the scores on the summary instead.
+// `GET /runs/{run_id}/findings` returns FindingSummary records that carry the
+// full score set, so every column this view is required to show comes from the
+// list response itself. There is no per-row detail request.
+//
+// `items` is one page; `total` and `by_severity` describe the complete filtered
+// result. Changing a filter always returns the reader to the first page.
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import { ListFilter, Loader2, Search } from "lucide-react";
+import { ChevronLeft, ChevronRight, ListFilter, Loader2, Search } from "lucide-react";
 
-import { api, type Finding, type FindingSummary, type Severity } from "@/lib/api";
-import { formatRatio, pluralize } from "@/lib/format";
+import { api, type FindingSummary } from "@/lib/api";
+import { formatCount, formatRatio, pluralize } from "@/lib/format";
+import {
+  buildFindingsSearch,
+  filterKey,
+  FINDINGS_PAGE_SIZE,
+  nextOffset,
+  pageRange,
+  previousOffset,
+  readFindingsQuery,
+} from "@/lib/pagination";
 import {
   FINDING_STATUS,
   RELATIONSHIP,
@@ -33,41 +43,63 @@ export function FindingsPage() {
   const { runId = "" } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const severityParam = searchParams.get("severity");
-  const severity: Severity | "" = isSeverity(severityParam) ? severityParam : "";
-  const queryParam = searchParams.get("q") ?? "";
+  const query = readFindingsQuery(searchParams);
+  const { severity, offset } = query;
 
-  const [queryInput, setQueryInput] = useState(queryParam);
-  const [debouncedQuery, setDebouncedQuery] = useState(queryParam);
+  const [queryInput, setQueryInput] = useState(query.q);
+  const [debouncedQuery, setDebouncedQuery] = useState(query.q);
 
   // Debounce so typing does not issue a request per keystroke.
   useEffect(() => {
-    const timer = setTimeout(() => setDebouncedQuery(queryInput), SEARCH_DEBOUNCE_MS);
+    const timer = setTimeout(() => setDebouncedQuery(queryInput.trim()), SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(timer);
   }, [queryInput]);
 
-  // Keep the URL shareable, without pushing a history entry per keystroke.
+  // Keep the URL shareable, without pushing a history entry per keystroke. A
+  // filter change resets the offset: page 3 of the old filter means nothing under
+  // the new one.
+  const activeFilters = filterKey({ severity, q: debouncedQuery });
+  const lastFilters = useRef(activeFilters);
+
   useEffect(() => {
-    const next = new URLSearchParams();
-    if (severity) next.set("severity", severity);
-    if (debouncedQuery) next.set("q", debouncedQuery);
+    const filtersChanged = lastFilters.current !== activeFilters;
+    lastFilters.current = activeFilters;
+    const next = buildFindingsSearch({
+      severity,
+      q: debouncedQuery,
+      offset: filtersChanged ? 0 : offset,
+    });
     setSearchParams(next, { replace: true });
-  }, [severity, debouncedQuery, setSearchParams]);
+  }, [activeFilters, severity, debouncedQuery, offset, setSearchParams]);
 
   const loader = useCallback(
     () =>
       api.listRunFindings(runId, {
         severity: severity === "" ? null : severity,
-        q: debouncedQuery.trim() === "" ? null : debouncedQuery.trim(),
+        q: debouncedQuery === "" ? null : debouncedQuery,
+        limit: FINDINGS_PAGE_SIZE,
+        offset,
       }),
-    [runId, severity, debouncedQuery],
+    [runId, severity, debouncedQuery, offset],
   );
 
   const { data, error, loading, refreshing, reload } = useAsync(loader);
   const items = useMemo(() => data?.items ?? [], [data]);
-  const details = useFindingDetails(items);
 
-  const filtersActive = severity !== "" || debouncedQuery.trim() !== "";
+  const filtersActive = severity !== "" || debouncedQuery !== "";
+  const range = pageRange(offset, items.length, data?.total ?? 0);
+
+  function updateSearch(next: { severity?: typeof severity; offset?: number }): void {
+    setSearchParams(
+      buildFindingsSearch({
+        severity: next.severity ?? severity,
+        q: debouncedQuery,
+        // Any severity change starts again at the first page.
+        offset: next.severity !== undefined ? 0 : (next.offset ?? offset),
+      }),
+      { replace: true },
+    );
+  }
 
   function clearFilters(): void {
     setQueryInput("");
@@ -116,10 +148,10 @@ export function FindingsPage() {
               className="select"
               value={severity}
               onChange={(event) => {
-                const next = new URLSearchParams(searchParams);
-                if (event.target.value) next.set("severity", event.target.value);
-                else next.delete("severity");
-                setSearchParams(next, { replace: true });
+                const value = event.target.value;
+                updateSearch({
+                  severity: value === "low" || value === "medium" || value === "high" ? value : "",
+                });
               }}
             >
               <option value="">All severities</option>
@@ -143,12 +175,35 @@ export function FindingsPage() {
                 <Loader2 size={13} aria-hidden="true" className="spin" /> Searching…
               </>
             ) : data ? (
-              pluralize(data.total, "finding")
+              range.total === 0 ? (
+                pluralize(0, "finding")
+              ) : (
+                `Showing ${formatCount(range.first)}–${formatCount(range.last)} of ${pluralize(
+                  range.total,
+                  "finding",
+                )}`
+              )
             ) : (
               ""
             )}
           </p>
         </div>
+
+        {data && data.total > 0 ? (
+          <div className="filters filters--counts">
+            <span className="field__hint">Across the whole filtered result:</span>
+            <div className="chip-row">
+              {SEVERITY_ORDER.map((level) => (
+                <StatusBadge
+                  key={level}
+                  descriptor={SEVERITY[level]}
+                  label={`${SEVERITY[level].label}: ${formatCount(data.by_severity[level])}`}
+                  srPrefix="Filtered count —"
+                />
+              ))}
+            </div>
+          </div>
+        ) : null}
 
         <div className="panel__body">
           {loading ? (
@@ -168,21 +223,45 @@ export function FindingsPage() {
               a verdict. Keep the run detail page open to watch progress.
             </EmptyState>
           ) : (
-            <FindingsTable items={items} details={details} />
+            <FindingsTable items={items} />
           )}
         </div>
+
+        {data && (range.hasPrevious || range.hasNext) ? (
+          <nav className="pager" aria-label="Findings pages">
+            <button
+              type="button"
+              className="btn btn--sm"
+              disabled={!range.hasPrevious}
+              onClick={() => updateSearch({ offset: previousOffset(offset) })}
+            >
+              <ChevronLeft size={14} aria-hidden="true" />
+              Previous page
+            </button>
+            <span className="pager__status">
+              {`${formatCount(range.first)}–${formatCount(range.last)} of ${formatCount(
+                range.total,
+              )}`}
+            </span>
+            <button
+              type="button"
+              className="btn btn--sm"
+              disabled={!range.hasNext}
+              onClick={() =>
+                updateSearch({ offset: nextOffset(offset, FINDINGS_PAGE_SIZE, range.total) })
+              }
+            >
+              Next page
+              <ChevronRight size={14} aria-hidden="true" />
+            </button>
+          </nav>
+        ) : null}
       </Panel>
     </>
   );
 }
 
-function FindingsTable({
-  items,
-  details,
-}: {
-  items: FindingSummary[];
-  details: Record<string, Finding | null>;
-}) {
+function FindingsTable({ items }: { items: FindingSummary[] }) {
   return (
     <div className="table-wrap">
       <table className="table">
@@ -203,105 +282,54 @@ function FindingsTable({
           </tr>
         </thead>
         <tbody>
-          {items.map((item) => {
-            const detail = details[item.finding_id];
-            return (
-              <tr key={item.finding_id}>
-                <th scope="row" style={{ background: "transparent", textTransform: "none" }}>
-                  <Link to={`/findings/${item.finding_id}`}>
-                    <Mono>{item.finding_id}</Mono>
-                  </Link>
-                  <span className="field__hint" style={{ display: "block" }}>
-                    <Mono>{item.target_id}</Mono>
-                  </span>
-                </th>
-                <td>
+          {items.map((item) => (
+            <tr key={item.finding_id}>
+              <th scope="row" style={{ background: "transparent", textTransform: "none" }}>
+                <Link to={`/findings/${item.finding_id}`}>
+                  <Mono>{item.finding_id}</Mono>
+                </Link>
+                <span className="field__hint" style={{ display: "block" }}>
+                  <Mono>{item.target_id}</Mono>
+                </span>
+              </th>
+              <td>
+                <StatusBadge
+                  descriptor={RELATIONSHIP[item.relationship]}
+                  srPrefix="Relationship:"
+                />
+              </td>
+              <td>
+                <StatusBadge descriptor={SEVERITY[item.severity]} srPrefix="Severity:" />
+              </td>
+              <td>
+                <StatusBadge descriptor={VERDICT[item.verdict]} srPrefix="Verdict:" />
+              </td>
+              <td>
+                <span className="stack stack--tight">
+                  <strong>{formatRatio(item.scores.evidence_strength)}</strong>
                   <StatusBadge
-                    descriptor={RELATIONSHIP[item.relationship]}
-                    srPrefix="Relationship:"
+                    descriptor={SOURCE_AUTHORITY[item.scores.source_authority]}
+                    srPrefix="Source authority:"
                   />
-                </td>
-                <td>
-                  <StatusBadge descriptor={SEVERITY[item.severity]} srPrefix="Severity:" />
-                </td>
-                <td>
-                  <StatusBadge descriptor={VERDICT[item.verdict]} srPrefix="Verdict:" />
-                </td>
-                <td>
-                  {detail === undefined ? (
-                    <span className="field__hint">Loading…</span>
-                  ) : detail === null ? (
-                    <span className="field__hint">Unavailable</span>
-                  ) : (
-                    <span className="stack stack--tight">
-                      <strong>{formatRatio(detail.scores.evidence_strength)}</strong>
-                      <StatusBadge
-                        descriptor={SOURCE_AUTHORITY[detail.scores.source_authority]}
-                        srPrefix="Source authority:"
-                      />
-                    </span>
-                  )}
-                </td>
-                <td>
-                  {detail ? (
-                    <strong>{formatRatio(detail.scores.interpretation_confidence)}</strong>
-                  ) : (
-                    <span className="field__hint">—</span>
-                  )}
-                </td>
-                <td>
-                  <StatusBadge
-                    descriptor={humanReviewDescriptor(item.human_review_required)}
-                    label={item.human_review_required ? "Required" : "Not required"}
-                    srPrefix="Human review:"
-                  />
-                </td>
-                <td>
-                  <StatusBadge descriptor={FINDING_STATUS[item.status]} srPrefix="Status:" />
-                </td>
-              </tr>
-            );
-          })}
+                </span>
+              </td>
+              <td>
+                <strong>{formatRatio(item.scores.interpretation_confidence)}</strong>
+              </td>
+              <td>
+                <StatusBadge
+                  descriptor={humanReviewDescriptor(item.human_review_required)}
+                  label={item.human_review_required ? "Required" : "Not required"}
+                  srPrefix="Human review:"
+                />
+              </td>
+              <td>
+                <StatusBadge descriptor={FINDING_STATUS[item.status]} srPrefix="Status:" />
+              </td>
+            </tr>
+          ))}
         </tbody>
       </table>
     </div>
   );
-}
-
-/**
- * Hydrate each listed finding with its score set. `undefined` means "still
- * loading", `null` means the detail call failed — the row degrades rather than
- * failing the whole table.
- */
-function useFindingDetails(items: FindingSummary[]): Record<string, Finding | null> {
-  const [details, setDetails] = useState<Record<string, Finding | null>>({});
-  const ids = items.map((item) => item.finding_id).join(",");
-
-  useEffect(() => {
-    if (!ids) return;
-    let cancelled = false;
-
-    void Promise.all(
-      ids.split(",").map(async (id): Promise<[string, Finding | null]> => {
-        try {
-          return [id, await api.getFinding(id)];
-        } catch {
-          return [id, null];
-        }
-      }),
-    ).then((entries) => {
-      if (cancelled) return;
-      setDetails(Object.fromEntries(entries));
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [ids]);
-
-  return details;
-}
-
-function isSeverity(value: string | null): value is Severity {
-  return value === "low" || value === "medium" || value === "high";
 }

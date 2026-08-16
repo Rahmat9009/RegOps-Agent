@@ -235,8 +235,11 @@ function AuditContent({ report, onReload }: { report: AuditReport; onReload: () 
               />
             </div>
             <p className="field__hint">
-              Both figures count action attempts that were detected as duplicates and prevented.
-              They do not indicate that any duplicate action was executed.
+              Both figures describe attempts that were detected as duplicates and stopped before
+              execution; neither indicates that a duplicate action ran. The rate is the share of
+              all action attempts that repeated an idempotency key — the total attempt count is
+              not part of the audit record, so a prevented count above zero always comes with a
+              rate above zero.
             </p>
           </div>
         </Panel>
@@ -244,7 +247,7 @@ function AuditContent({ report, onReload }: { report: AuditReport; onReload: () 
         <Panel
           title="Revalidation"
           icon={RefreshCw}
-          description="The pipeline was rerun after execution to confirm which detected findings the run's actions resolved. A run whose amendment was rejected resolves none."
+          description="How many detected findings this run's executed actions resolved. A run whose amendment was rejected executes nothing and revalidates nothing, so it resolves none."
         >
           <div className="grid grid--2">
             <Stat
@@ -296,7 +299,8 @@ function AuditContent({ report, onReload }: { report: AuditReport; onReload: () 
           <div className="stack">
             <p>
               The audit package bundles the executed actions, evidence chains, and revalidation
-              results for this run.
+              results for this run. The link is a short-lived signed <Mono>https</Mono> URL issued
+              by the backend and expires on its own.
             </p>
             <a
               className="btn btn--primary"
@@ -318,16 +322,16 @@ function AuditContent({ report, onReload }: { report: AuditReport; onReload: () 
             <p className="field__hint" id="package-unavailable">
               {packageUrlRejected ? (
                 <>
-                  Unavailable: the API returned an <Mono>audit_package_url</Mono> that is not an
-                  absolute <Mono>https://</Mono> URL, so this console will not turn it into a link.
+                  Unavailable: the API returned an <Mono>audit_package_url</Mono> that is not the
+                  absolute <Mono>https://</Mono> signed URL the contract defines, so this console
+                  will not turn it into a link.
                 </>
               ) : (
                 <>
                   Unavailable: the API returned no <Mono>audit_package_url</Mono> for this run. The
                   control stays disabled rather than pointing at a URL this console invented.
                 </>
-              )}{" "}
-              See CR-006 in <Mono>frontend/CONTRACT_REQUESTS.md</Mono>.
+              )}
             </p>
           </div>
         )}

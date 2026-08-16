@@ -1,16 +1,17 @@
 // RunDetailPage — View 3: run detail.
 //
-// Processing stages, partition progress, the transitions this client observed
-// while polling, and recoverable-failure state.
+// Processing stages, partition progress, the run's authoritative transition
+// history, recoverable-failure state and change detection.
 //
-// The timeline shows ONLY state values returned by the API plus the time this
-// browser first observed them. No agent reasoning or chain-of-thought is shown,
-// because none is returned and none may be invented.
+// The timeline shows ONLY the server-recorded transitions the API returns, with
+// their recorded actor, timestamp and safe reason label. No agent reasoning or
+// chain-of-thought is shown, because none is returned and none may be invented.
 
 import { Link, useParams } from "react-router-dom";
 import {
   Clock,
   FileCheck2,
+  FileDiff,
   Layers,
   ListFilter,
   Radar,
@@ -18,20 +19,22 @@ import {
   UserCheck,
 } from "lucide-react";
 
+import type { RunTransition } from "@/lib/api";
 import { formatCount, formatDateTime, formatPercent, formatTime } from "@/lib/format";
 import { APPROVAL_STATUS, RUN_STATE, isTerminalState } from "@/lib/presentation";
-import { useRunPolling, type ObservedTransition } from "@/hooks/useRunPolling";
+import { useRunPolling } from "@/hooks/useRunPolling";
 import { Mono, StatusBadge } from "@/components/Badge";
 import { Notice } from "@/components/Notice";
 import { PageHeader } from "@/components/PageHeader";
 import { Panel } from "@/components/Panel";
 import { PipelineMap } from "@/components/PipelineMap";
 import { ProgressMeter } from "@/components/Meter";
+import { ChangeDetectionDetails, RecoveryDetails } from "@/components/RunInsights";
 import { EmptyState, ErrorState, LoadingState } from "@/components/states";
 
 export function RunDetailPage() {
   const { runId = "" } = useParams();
-  const { run, error, loading, polling, transitions, refresh } = useRunPolling(runId || null);
+  const { run, error, loading, polling, refresh } = useRunPolling(runId || null);
 
   if (loading && !run) {
     return (
@@ -103,10 +106,9 @@ export function RunDetailPage() {
 
       {run.state === "FAILED_RECOVERABLE" ? (
         <Notice tone="review" title="Recoverable failure — resuming from checkpoint" icon={RefreshCw} live>
-          A partition failed. The run is retrying and will continue to a later state on its own.
-          The API contract does not expose the failed partition index, retry count, or checkpoint
-          resume flag (see <Mono>CONTRACT_REQUESTS.md</Mono> CR-003), so this console does not
-          display them.
+          A partition failed. The run is retrying and will continue to a later state on its own. The
+          recovery record below reports the checkpoint, the attempt count and the sanitized error
+          the API returned.
         </Notice>
       ) : null}
 
@@ -188,11 +190,29 @@ export function RunDetailPage() {
         </Panel>
 
         <Panel
-          title="Observed state transitions"
+          title="State transitions"
           icon={Clock}
-          description="Recorded by this browser while polling. It is not a server-side history."
+          description="The run's server-recorded history, oldest first."
         >
-          <TransitionTimeline transitions={transitions} />
+          <TransitionTimeline transitions={run.transitions} />
+        </Panel>
+      </div>
+
+      <div className="grid grid--2">
+        <Panel
+          title="Recovery"
+          icon={RefreshCw}
+          description="Checkpoint, attempt count and sanitized error reported by the API."
+        >
+          <RecoveryDetails recovery={run.recovery} />
+        </Panel>
+
+        <Panel
+          title="Change detection"
+          icon={FileDiff}
+          description="Whether this source document differs from the previously analysed one."
+        >
+          <ChangeDetectionDetails detection={run.change_detection} />
         </Panel>
       </div>
 
@@ -226,11 +246,17 @@ export function RunDetailPage() {
   );
 }
 
-function TransitionTimeline({ transitions }: { transitions: ObservedTransition[] }) {
+/**
+ * The run's authoritative transition history, rendered oldest to newest exactly
+ * as the API ordered it. Each entry shows the recorded state change, when it
+ * happened, which backend actor recorded it and the safe reason label — nothing
+ * is inferred from what this browser happened to observe.
+ */
+function TransitionTimeline({ transitions }: { transitions: RunTransition[] }) {
   if (transitions.length === 0) {
     return (
-      <EmptyState icon={Clock} title="No transitions observed yet">
-        The first observation is recorded as soon as the run responds to a poll.
+      <EmptyState icon={Clock} title="No transitions recorded">
+        The API returned no transition history for this run.
       </EmptyState>
     );
   }
@@ -239,29 +265,41 @@ function TransitionTimeline({ transitions }: { transitions: ObservedTransition[]
     <>
       <ol className="timeline">
         {transitions.map((transition, index) => {
-          const descriptor = RUN_STATE[transition.state];
+          const descriptor = RUN_STATE[transition.to_state];
           const Icon = descriptor.icon;
+          const from = transition.from_state ? RUN_STATE[transition.from_state].label : null;
           return (
-            <li key={`${transition.state}-${index}`} className="timeline__item">
+            <li
+              key={`${transition.to_state}-${transition.occurred_at}-${index}`}
+              className="timeline__item"
+            >
               <span className="timeline__dot" aria-hidden="true">
                 <Icon size={13} />
               </span>
               <span className="timeline__body">
                 <StatusBadge descriptor={descriptor} srPrefix="State:" />
                 <span className="timeline__time">
-                  Observed {formatTime(transition.observedAt)} · API reported{" "}
-                  {formatTime(transition.reportedAt)}
+                  {formatTime(transition.occurred_at)} ·{" "}
+                  {from ? (
+                    <>
+                      from <strong>{from}</strong>
+                    </>
+                  ) : (
+                    "first recorded state"
+                  )}{" "}
+                  · recorded by <Mono>{transition.actor}</Mono>
                 </span>
-                <span className="field__hint">{descriptor.description}</span>
+                <span className="field__hint">
+                  {transition.reason ?? descriptor.description}
+                </span>
               </span>
             </li>
           );
         })}
       </ol>
       <p className="field__hint">
-        These are state values returned by the API together with the time this browser first saw
-        them. Transitions that happened before this page was opened are not listed, and no agent
-        reasoning is shown.
+        Server-recorded transitions in the order the API returned them, oldest first. Reason and
+        actor are backend-assigned labels; no agent reasoning is shown.
       </p>
     </>
   );
