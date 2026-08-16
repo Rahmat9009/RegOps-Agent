@@ -1,9 +1,15 @@
 # RegOps backend
 
-Minimal Python 3.12 FastAPI implementation of `contracts/openapi.yaml`. Phase 0
-implements health and multipart PDF intake. The six later-workflow endpoints are
-contract-visible structured `501` stubs; no Gemini, ADK, Firestore, or business
-workflow is implemented here.
+Python 3.12 FastAPI implementation of `contracts/openapi.yaml` plus the Phase 1A
+domain and orchestration foundation for the one-document path. Phase 1A includes
+strict role outputs, explicit run transitions and checkpoints, repository ports, an
+opt-in non-production in-memory adapter, allowlisted idempotent actions, backend-owned
+approval identity, deterministic shadow-state revalidation, and auditable events.
+
+The six later-workflow HTTP operations remain contract-visible structured `501`
+boundaries until real Phase 1 integrations are wired. Gemini/Vertex, Google ADK,
+Firestore, Cloud Storage, and Google Workflows are represented by interfaces only.
+Runtime placeholders fail clearly and never fabricate obligations or findings.
 
 ## Clean setup and checks (PowerShell)
 
