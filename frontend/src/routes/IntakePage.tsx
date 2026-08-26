@@ -9,6 +9,7 @@ import { Link, useNavigate } from "react-router-dom";
 import {
   ArrowRight,
   CheckCircle2,
+  FileDiff,
   FileText,
   FlaskConical,
   Loader2,
@@ -24,6 +25,7 @@ import { Mono, StatusBadge, Tag } from "@/components/Badge";
 import { Notice } from "@/components/Notice";
 import { PageHeader } from "@/components/PageHeader";
 import { Panel } from "@/components/Panel";
+import { ChangeDetectionDetails } from "@/components/RunInsights";
 
 /**
  * A minimal placeholder PDF so the workflow can be demonstrated without hunting
@@ -300,13 +302,12 @@ function AcceptedRun({ run, onStartAnother }: { run: Run; onStartAnother: () => 
         </dl>
       </Panel>
 
-      <Panel title="Version and change detection" icon={FileText}>
-        <Notice tone="info" title="Not reported by the API">
-          The API contract does not currently return a change-detection result, so this console
-          cannot say whether the document is new, a new version of an existing regulation, or a
-          duplicate. Rather than display a guess, the field is left empty. The request is recorded
-          in <Mono>frontend/CONTRACT_REQUESTS.md</Mono> as CR-004.
-        </Notice>
+      <Panel
+        title="Version and change detection"
+        icon={FileDiff}
+        description="Reported by the API from the document's content hash."
+      >
+        <ChangeDetectionDetails detection={run.change_detection} />
       </Panel>
 
       <div className="row">

@@ -100,6 +100,45 @@ export interface FindingsBySeverity {
   high: number;
 }
 
+/**
+ * RunTransition — one authoritative, server-recorded state change.
+ *
+ * `from_state` is `null` only for the first transition of a run. `reason` and
+ * `actor` are safe backend-assigned labels: never prompts, stack traces,
+ * credentials, tokens, or infrastructure detail.
+ */
+export interface RunTransition {
+  from_state: RunState | null;
+  to_state: RunState;
+  occurred_at: string;
+  reason: string | null;
+  actor: string;
+}
+
+/**
+ * RecoveryInfo — safe recovery metadata for a recoverable failure.
+ *
+ * The contract guarantees that `recovery_available === true` implies a non-null
+ * `checkpoint_state`. Error fields are sanitized by the backend.
+ */
+export interface RecoveryInfo {
+  recovery_available: boolean;
+  checkpoint_state: RunState | null;
+  attempt_count: number;
+  last_error_code: string | null;
+  last_error_message: string | null;
+}
+
+/** ChangeDetection — lowercase SHA-256 digests plus the detection outcome. */
+export interface ChangeDetection {
+  /** 64 lowercase hex characters. */
+  source_sha256: string;
+  /** 64 lowercase hex characters, or null when nothing preceded this document. */
+  previous_source_sha256: string | null;
+  changed: boolean;
+  detected_at: string;
+}
+
 export interface Run {
   run_id: string;
   state: RunState;
@@ -107,6 +146,10 @@ export interface Run {
   updated_at: string;
   regulation: Regulation;
   progress: RunProgress;
+  /** Authoritative server-recorded history, ordered oldest to newest. */
+  transitions: RunTransition[];
+  recovery?: RecoveryInfo | null;
+  change_detection?: ChangeDetection | null;
   findings_by_severity?: FindingsBySeverity;
   pending_approvals?: Approval[];
   completed_actions?: ProposedAction[];
@@ -160,6 +203,8 @@ export interface FindingSummary {
   verdict: FindingVerdict;
   status: FindingStatus;
   human_review_required: boolean;
+  /** Required by the contract — the findings list never hydrates scores per row. */
+  scores: FindingScores;
 }
 
 /** AffectedCase — `synthetic` is `const: true`. */
@@ -180,8 +225,14 @@ export interface Finding extends FindingSummary {
 }
 
 export interface FindingList {
+  /** The selected page of matching findings. */
   items: FindingSummary[];
+  /** Findings matching the active filters, before pagination. */
   total: number;
+  limit: number;
+  offset: number;
+  /** Severity counts across the complete filtered result, before pagination. */
+  by_severity: FindingsBySeverity;
 }
 
 /* -------------------------------------------------------- counterfactual */
@@ -209,6 +260,8 @@ export interface Approval {
   approval_id: string;
   action_id: string;
   run_id: string;
+  /** The finding this approval's action came from — no action lookup needed. */
+  finding_id: string;
   status: ApprovalStatus;
   decided_at?: string | null;
   /**

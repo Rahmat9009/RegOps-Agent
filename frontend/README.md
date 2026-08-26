@@ -54,8 +54,11 @@ src/
     mockAdapter.ts  in-memory workflow driver
     mockData.ts     synthetic fixtures
     index.ts        adapter factory + the `api` singleton
+  lib/approvalDecision.ts  when a human decision may be recorded (pure)
   lib/presentation.ts  enum -> { label, icon, tone } for every status
+  lib/pagination.ts    findings filter + page state (pure, testable)
   lib/format.ts        display formatting
+  lib/url.ts           audit-package URL safety check
   lib/activeRun.ts     which run this browser is looking at (browser state)
   hooks/               useAsync, useRunPolling (2 s polling)
   components/          shell, panels, badges, meters, loading/empty/error states
@@ -87,3 +90,17 @@ src/
 - Approval produces an `APPROVED_DRAFT` against a synthetic contract's **shadow copy**.
   Nothing in this UI may imply a real contract was modified or that legal compliance
   was determined.
+- Rejection is a business decision, not a failure: the amendment becomes `REJECTED` and
+  is never executed, the finding stays `OPEN`, and the run completes directly from
+  `AWAITING_APPROVAL` without `EXECUTING` or `REVALIDATING`.
+- Run history comes from `Run.transitions`, the authoritative server-recorded array.
+  The client records no history of its own and displays no agent reasoning.
+- Every mock identifier a run owns — findings, actions, approvals, shadow snapshots —
+  is globally unique and run-scoped (`RUN-001-FND-0001`). The contract's finding,
+  action and approval routes carry no run id, so a link saved from one run must never
+  resolve against another. Evidence document ids (regulation, contract, policy, case)
+  stay shared: they are the same synthetic corpus records for every run.
+- A decision is never recorded against evidence that failed to load. Approve requires
+  the exact bound finding, its proposed action and the counterfactual preview; reject
+  requires the binding and its evidence only, because it executes nothing. The rule
+  lives in `lib/approvalDecision.ts` and gates the submit path, not just the buttons.

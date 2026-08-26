@@ -3,11 +3,15 @@
 // Shows the proposed amendment, its evidence, a before/after comparison from the
 // deterministic shadow-state preview, and the approve / reject controls.
 //
-// Two things this screen must never do:
+// Three things this screen must never do:
 //   1. Imply that approval modifies a real contract. It records an APPROVED_DRAFT
 //      amendment against a synthetic contract's shadow copy.
 //   2. Send `decided_by`. Reviewer identity is assigned by the backend; the request
 //      body carries only `decision` and `note`.
+//   3. Record a decision against evidence it could not load. Eligibility is decided
+//      by `evaluateDecisionEligibility`, which gates both the buttons and the
+//      submit path — a disabled button is never the only thing standing between a
+//      reviewer and an unfounded approval. Nothing missing is ever substituted.
 
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
@@ -34,6 +38,11 @@ import {
   type RegOpsApiError,
   type Run,
 } from "@/lib/api";
+import {
+  canSubmitDecision,
+  DECISION_BLOCKER_MESSAGE,
+  evaluateDecisionEligibility,
+} from "@/lib/approvalDecision";
 import { formatCount, formatDateTime, pluralize } from "@/lib/format";
 import {
   ACTION_AUTONOMY,
@@ -50,7 +59,8 @@ import { EmptyState, ErrorState, LoadingState } from "@/components/states";
 
 interface ApprovalContext {
   run: Run;
-  approval: Approval;
+  /** Null when this approval is no longer in the run's pending list. */
+  approval: Approval | null;
   finding: Finding | null;
   preview: CounterfactualPreview | null;
 }
@@ -69,6 +79,15 @@ export function ApprovalPage() {
   const [decision, setDecision] = useState<Approval | null>(null);
   const [decisionError, setDecisionError] = useState<RegOpsApiError | null>(null);
 
+  // Computed from what actually loaded, before any early return, so the guard in
+  // `decide` and the buttons' disabled state can never disagree.
+  const eligibility = evaluateDecisionEligibility({
+    approval: context?.approval ?? null,
+    finding: context?.finding ?? null,
+    action: context?.finding?.proposed_action ?? null,
+    preview: context?.preview ?? null,
+  });
+
   const load = useCallback(async (): Promise<void> => {
     if (!runId) {
       setLoading(false);
@@ -79,14 +98,14 @@ export function ApprovalPage() {
       const run = await api.getRun(runId);
       const approval = run.pending_approvals?.find((item) => item.approval_id === approvalId);
       if (!approval) {
-        setContext({ run, approval: fallbackApproval(approvalId, runId), finding: null, preview: null });
+        setContext({ run, approval: null, finding: null, preview: null });
         setError(null);
         return;
       }
 
-      // The contract has no action -> finding lookup, so the finding backing this
-      // action is located through the run's findings (CONTRACT_REQUESTS.md CR-008).
-      const finding = await findFindingForAction(runId, approval.action_id);
+      // `Approval.finding_id` is required by the contract, so the finding behind
+      // this decision is one request away — no action lookup, no scanning.
+      const finding = await api.getFinding(approval.finding_id).catch(() => null);
       const preview = await api.previewAction(approval.action_id).catch(() => null);
 
       setContext({ run, approval, finding, preview });
@@ -103,6 +122,10 @@ export function ApprovalPage() {
   }, [load]);
 
   async function decide(value: "approve" | "reject"): Promise<void> {
+    // The controls are disabled in this case, but the guard lives here as well:
+    // eligibility is a safety rule, not a presentation detail.
+    if (!canSubmitDecision(eligibility, value)) return;
+
     setSubmitting(value);
     setDecisionError(null);
     try {
@@ -171,8 +194,32 @@ export function ApprovalPage() {
   }
 
   const { run, approval, finding, preview } = context;
+
+  if (!approval) {
+    return (
+      <>
+        <PageHeader title="Approval" crumbs={crumbs} />
+        <Panel title="Proposed action" icon={UserCheck}>
+          <EmptyState icon={ShieldAlert} title="No longer pending">
+            Approval <Mono>{approvalId}</Mono> is not in run <Mono>{run.run_id}</Mono>&rsquo;s
+            pending list. It may already have been decided in another session. The contract has no{" "}
+            <Mono>GET /approvals/{"{approval_id}"}</Mono> to read a decided approval back
+            (CR-005), so the run detail page is the place to see the outcome.
+          </EmptyState>
+          <div className="row">
+            <Link className="btn btn--primary" to={`/runs/${run.run_id}`}>
+              <ArrowRight size={16} aria-hidden="true" />
+              Open run detail
+            </Link>
+          </div>
+        </Panel>
+      </>
+    );
+  }
+
+  // Reaching this point means the approval is still in the run's pending list —
+  // anything else returned above.
   const action = finding?.proposed_action ?? null;
-  const isPending = run.pending_approvals?.some((item) => item.approval_id === approvalId) ?? false;
   const outcome = decision;
 
   return (
@@ -183,7 +230,7 @@ export function ApprovalPage() {
           outcome
             ? outcome.status === "APPROVED"
               ? "This action was approved. The run continues to execution and revalidation."
-              : "This action was rejected. The amendment was not executed; the run continues and completes without it."
+              : "This action was rejected. The amendment was not executed, and the run completes without executing or revalidating anything."
             : "A consequential action is paused here. Nothing is written until you decide."
         }
         crumbs={crumbs}
@@ -201,13 +248,6 @@ export function ApprovalPage() {
       </Notice>
 
       {outcome ? <DecisionOutcome decision={outcome} runId={run.run_id} /> : null}
-
-      {!outcome && !isPending ? (
-        <Notice tone="info" title="No longer pending">
-          This approval is not in the run&rsquo;s pending list. It may already have been decided in
-          another session. Open the run detail page to see the current state.
-        </Notice>
-      ) : null}
 
       <Panel title="Proposed amendment" icon={FileSignature}>
         {action ? (
@@ -255,8 +295,10 @@ export function ApprovalPage() {
           </div>
         ) : (
           <EmptyState icon={AlertTriangle} title="The proposed action could not be resolved">
-            The approval references action <Mono>{approval.action_id}</Mono>, but no finding in
-            this run exposes it. Review the finding list before deciding.
+            The approval references action <Mono>{approval.action_id}</Mono> on finding{" "}
+            <Mono>{approval.finding_id}</Mono>, but that action could not be loaded from the
+            finding. Nothing is substituted for it, so no decision can be recorded until it
+            loads.
           </EmptyState>
         )}
       </Panel>
@@ -353,8 +395,10 @@ export function ApprovalPage() {
           </div>
         ) : (
           <EmptyState icon={GitCompare} title="No preview available">
-            The shadow-state preview could not be loaded for this action. Decide from the evidence
-            above, or retry the preview from the finding.
+            The shadow-state preview could not be loaded for this action, so it cannot be
+            approved — approving without the predicted outcome would be a decision made blind.
+            Rejecting stays available, because it executes nothing. Reload this screen to try the
+            preview again.
           </EmptyState>
         )}
       </Panel>
@@ -386,6 +430,31 @@ export function ApprovalPage() {
               </p>
             </div>
 
+            {eligibility.blockers.length > 0 ? (
+              <div id="decision-blockers">
+                <Notice
+                  tone="critical"
+                  title={
+                    eligibility.canReject
+                      ? "This action cannot be approved"
+                      : "No decision can be recorded yet"
+                  }
+                  icon={ShieldAlert}
+                  live
+                >
+                  <ul className="stack stack--tight" style={{ listStyle: "none" }}>
+                    {eligibility.blockers.map((blocker) => (
+                      <li key={blocker}>{DECISION_BLOCKER_MESSAGE[blocker]}</li>
+                    ))}
+                  </ul>
+                  <p className="field__hint">
+                    Nothing is substituted for a record that failed to load. Reload this screen, or
+                    open the run detail page to check the finding and its proposed action.
+                  </p>
+                </Notice>
+              </div>
+            ) : null}
+
             {decisionError ? (
               <Notice tone="critical" title="The decision was not recorded" live>
                 {decisionError.message}
@@ -395,20 +464,30 @@ export function ApprovalPage() {
               </Notice>
             ) : null}
 
-            <Notice tone="review" title="What approving does">
-              Approving stores an <Mono>APPROVED_DRAFT</Mono> amendment against a synthetic
-              contract&rsquo;s shadow copy and lets the run continue to execution and revalidation.
-              It does not change a real contract, and it is not a legal determination. Rejecting is
-              an equally valid outcome: the amendment is never executed, the finding stays open, and
-              the run still completes with an audit record.
+            <Notice tone="review" title="What each decision does">
+              <p>
+                <strong>Approving</strong> stores an <Mono>APPROVED_DRAFT</Mono> amendment against a
+                synthetic contract&rsquo;s shadow copy and lets the run continue through execution
+                and revalidation. It does not change a real contract, and it is not a legal
+                determination.
+              </p>
+              <p>
+                <strong>Rejecting</strong> is an equally valid outcome, not a failure. The amendment
+                is marked <Mono>REJECTED</Mono> and never executed, the finding stays{" "}
+                <Mono>OPEN</Mono>, and the run completes directly from{" "}
+                <Mono>AWAITING_APPROVAL</Mono> without executing or revalidating anything. The
+                rejected amendment appears in neither the run&rsquo;s completed actions nor the
+                audit&rsquo;s executed actions.
+              </p>
             </Notice>
 
             <div className="row">
               <button
                 type="button"
                 className="btn btn--approve"
-                disabled={submitting !== null || !isPending}
+                disabled={submitting !== null || !eligibility.canApprove}
                 onClick={() => void decide("approve")}
+                aria-describedby={eligibility.canApprove ? undefined : "decision-blockers"}
               >
                 {submitting === "approve" ? (
                   <Loader2 size={16} aria-hidden="true" className="spin" />
@@ -420,8 +499,9 @@ export function ApprovalPage() {
               <button
                 type="button"
                 className="btn btn--reject"
-                disabled={submitting !== null || !isPending}
+                disabled={submitting !== null || !eligibility.canReject}
                 onClick={() => void decide("reject")}
+                aria-describedby={eligibility.canReject ? undefined : "decision-blockers"}
               >
                 {submitting === "reject" ? (
                   <Loader2 size={16} aria-hidden="true" className="spin" />
@@ -445,11 +525,19 @@ function DecisionOutcome({ decision, runId }: { decision: Approval; runId: strin
     <Notice
       tone={approved ? "verified" : "critical"}
       title={
-        approved ? "Approved — recorded as a draft" : "Rejected — the amendment was not executed"
+        approved
+          ? "Approved — recorded as a draft"
+          : "Rejected — the amendment was not executed and the run completes without it"
       }
       live
     >
       <dl className="dl">
+        <dt>Finding</dt>
+        <dd>
+          <Link to={`/findings/${decision.finding_id}`}>
+            <Mono>{decision.finding_id}</Mono>
+          </Link>
+        </dd>
         <dt>Decided at</dt>
         <dd>{formatDateTime(decision.decided_at)}</dd>
         <dt>Reviewer</dt>
@@ -465,31 +553,19 @@ function DecisionOutcome({ decision, runId }: { decision: Approval; runId: strin
         ) : null}
       </dl>
       <p>
-        <Link to={`/runs/${runId}`}>Return to run detail</Link> to watch execution and
-        revalidation.
+        {approved ? (
+          <>
+            <Link to={`/runs/${runId}`}>Return to run detail</Link> to watch execution and
+            revalidation.
+          </>
+        ) : (
+          <>
+            Nothing was executed and nothing is revalidated.{" "}
+            <Link to={`/runs/${runId}`}>Return to run detail</Link> to see the run complete with an
+            audit record.
+          </>
+        )}
       </p>
     </Notice>
   );
-}
-
-/** Locate the finding whose proposed action matches — see CR-008. */
-async function findFindingForAction(runId: string, actionId: string): Promise<Finding | null> {
-  const list = await api.listRunFindings(runId);
-  for (const summary of list.items) {
-    const detail = await api.getFinding(summary.finding_id).catch(() => null);
-    if (detail?.proposed_action?.action_id === actionId) return detail;
-  }
-  return null;
-}
-
-function fallbackApproval(approvalId: string, runId: string): Approval {
-  return {
-    approval_id: approvalId,
-    action_id: "unknown",
-    run_id: runId,
-    status: "PENDING",
-    decided_at: null,
-    decided_by: null,
-    note: null,
-  };
 }

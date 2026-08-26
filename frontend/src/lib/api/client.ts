@@ -23,6 +23,10 @@ export interface ListFindingsParams {
   severity?: Severity | null;
   /** Free-text search over target and obligation text. */
   q?: string | null;
+  /** Page size. Contract default 50, range 1–100. */
+  limit?: number | null;
+  /** Zero-based offset into the filtered result. Contract default 0. */
+  offset?: number | null;
 }
 
 export interface RegOpsApi {

@@ -18,6 +18,7 @@ import {
   CircleDashed,
   CircleSlash,
   ClipboardList,
+  FileDiff,
   FileSearch,
   FileSignature,
   FileText,
@@ -43,10 +44,12 @@ import type {
   ActionStatus,
   ActionType,
   ApprovalStatus,
+  ChangeDetection,
   DocumentKind,
   FindingStatus,
   FindingVerdict,
   ObligationType,
+  RecoveryInfo,
   Relationship,
   RunState,
   Severity,
@@ -443,6 +446,76 @@ export const APPROVAL_STATUS: Record<ApprovalStatus, Descriptor> = {
     description: "A reviewer rejected the proposed action.",
   },
 };
+
+/* ---------------------------------------------- recovery, change detection */
+
+/**
+ * How to present `Run.recovery`. Only the safe fields the contract defines are
+ * used: availability, checkpoint, attempt count and a sanitized error label.
+ */
+export function recoveryDescriptor(recovery: RecoveryInfo): Descriptor {
+  const checkpoint = recovery.checkpoint_state ? RUN_STATE[recovery.checkpoint_state].label : null;
+
+  if (recovery.recovery_available) {
+    return {
+      label: "Recovery available",
+      tone: "review",
+      icon: RefreshCw,
+      description: checkpoint
+        ? `The run can resume from its ${checkpoint.toLowerCase()} checkpoint.`
+        : "The run can resume from its last checkpoint.",
+    };
+  }
+
+  if (recovery.attempt_count > 0) {
+    return {
+      label: "Recovered from checkpoint",
+      tone: "verified",
+      icon: BadgeCheck,
+      description: checkpoint
+        ? `A retry resumed from the ${checkpoint.toLowerCase()} checkpoint and the run continued.`
+        : "A retry resumed the run from its last checkpoint.",
+    };
+  }
+
+  return {
+    label: "No recovery outstanding",
+    tone: "neutral",
+    icon: CircleDashed,
+    description: "No recoverable failure has been recorded for this run.",
+  };
+}
+
+/** How to present `Run.change_detection`. */
+export function changeDetectionDescriptor(detection: ChangeDetection): Descriptor {
+  if (!detection.changed) {
+    return {
+      label: "Unchanged document",
+      tone: "neutral",
+      icon: CircleSlash,
+      description:
+        "The uploaded document has the same content hash as the previously analysed source.",
+    };
+  }
+
+  return {
+    label: detection.previous_source_sha256 ? "Changed document" : "New document",
+    tone: "info",
+    icon: FileDiff,
+    description: detection.previous_source_sha256
+      ? "The content hash differs from the previously analysed source."
+      : "No earlier source hash was recorded, so this document is analysed as new.",
+  };
+}
+
+/**
+ * Shorten a hash for display. The full value is never dropped by callers — it is
+ * rendered for assistive technology alongside the shortened form.
+ */
+export function shortenHash(value: string, visible = 12): string {
+  if (visible <= 0 || value.length <= visible) return value;
+  return `${value.slice(0, visible)}…`;
+}
 
 /* --------------------------------------------------------------- helpers */
 

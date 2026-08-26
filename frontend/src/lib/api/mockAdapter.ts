@@ -4,10 +4,12 @@
 //   upload -> extracting -> mapping (with one recoverable partition failure)
 //   -> verifying -> awaiting approval -> counterfactual preview
 //   -> approve -> executing -> revalidating -> completed
+//   -> or reject -> completed (nothing executed, nothing revalidated)
 //
 // State advances on a wall clock so 2-second polling shows real movement, and the
 // run registry is mirrored into sessionStorage so a page reload does not lose the
-// demo. Every response conforms to contracts/openapi.yaml; every failure is a
+// demo. Every state change is appended to the run's authoritative `transitions`
+// history. Every response conforms to contracts/openapi.yaml; every failure is a
 // RegOpsApiError with the status the contract declares.
 
 import type { ListFindingsParams, RegOpsApi } from "./client";
@@ -29,15 +31,26 @@ import type {
 import {
   amendmentAction,
   baseRun,
+  countBySeverity,
   findingSearchText,
-  MOCK_AMENDMENT_ACTION_ID,
   MOCK_POST_APPROVAL_STATES,
+  MOCK_POST_REJECTION_STATES,
   MOCK_PRE_APPROVAL_STATES,
   MOCK_PROGRESS_BY_STATE,
+  MOCK_REVIEWER_ACTOR,
+  mockActionIds,
+  mockAmendmentActionId,
+  mockAmendmentFindingId,
+  mockApprovalId,
   mockAudit,
   mockCounterfactual,
   mockFindingDetail,
+  mockFindingIds,
+  mockFindingsBySeverity,
   mockFindingSummaries,
+  mockRecovery,
+  mockResolvedFindingIds,
+  mockTransition,
   pendingApproval,
   reviewTaskAction,
   type RunOutcome,
@@ -48,7 +61,14 @@ const STEP_MS = 2200;
 /** Artificial latency, so loading states are real rather than theoretical. */
 const LATENCY_MS = 140;
 
-const STORAGE_KEY = "regops.mock.runs.v2";
+// v4: run-owned identifiers (findings, actions, approvals, shadow snapshots) are
+// now globally unique and run-scoped. Snapshots written by an earlier version
+// hold the old shared ids, are incompatible, and are discarded.
+const STORAGE_KEY = "regops.mock.runs.v4";
+
+/** Contract defaults and bounds for `GET /runs/{run_id}/findings`. */
+const DEFAULT_LIMIT = 50;
+const MAX_LIMIT = 100;
 
 type Phase = "pre_approval" | "post_approval";
 
@@ -62,12 +82,24 @@ interface RunRecord {
   decision: RunOutcome | null;
   /** Epoch ms at which the current phase began. */
   phaseStartedAt: number;
+  /** How far the run has walked into the current phase's script. */
+  scriptIndex: number;
   approvals: Record<string, Approval>;
 }
 
 export class MockRegOpsApi implements RegOpsApi {
   private records = new Map<string, RunRecord>();
   private sequence = 0;
+
+  /**
+   * Exact resource id -> owning run id. The contract's finding, action and
+   * approval routes take no run id, so ownership is resolved through these
+   * indexes: never by scanning runs, never by substring matching, and never by
+   * assuming the most recent run.
+   */
+  private findingOwners = new Map<string, string>();
+  private actionOwners = new Map<string, string>();
+  private approvalOwners = new Map<string, string>();
 
   constructor() {
     this.restore();
@@ -123,8 +155,10 @@ export class MockRegOpsApi implements RegOpsApi {
       phase: "pre_approval",
       decision: null,
       phaseStartedAt: Date.now(),
+      scriptIndex: 0,
       approvals: {},
     });
+    this.indexRun(runId);
     this.persist();
     return clone(run);
   }
@@ -142,54 +176,72 @@ export class MockRegOpsApi implements RegOpsApi {
     const record = this.mustGetRun(runId);
     this.advance(record);
 
+    const limit = clampLimit(params?.limit);
+    const offset = clampOffset(params?.offset);
+
     // Findings only exist once mapping has produced candidates.
     if (!hasFindings(record.run.state)) {
-      return { items: [], total: 0 };
+      return { items: [], total: 0, limit, offset, by_severity: { low: 0, medium: 0, high: 0 } };
     }
 
-    let items: FindingSummary[] = mockFindingSummaries(runId).map((summary) =>
-      this.applyOutcome(record, summary),
+    const resolvedIds = this.resolvedFindingIds(record);
+    let matching: FindingSummary[] = mockFindingSummaries(runId).map((summary) =>
+      this.applyOutcome(record, summary, resolvedIds),
     );
 
     if (params?.severity) {
-      items = items.filter((item) => item.severity === params.severity);
+      matching = matching.filter((item) => item.severity === params.severity);
     }
     if (params?.q) {
       const needle = params.q.trim().toLowerCase();
-      items = items.filter(
+      matching = matching.filter(
         (item) =>
           item.target_id.toLowerCase().includes(needle) ||
-          findingSearchText(item.finding_id).includes(needle),
+          findingSearchText(runId, item.finding_id).includes(needle),
       );
     }
 
-    return { items, total: items.length };
+    // `total` and `by_severity` describe the complete filtered result; `items` is
+    // only the requested page of it.
+    return {
+      items: clone(matching.slice(offset, offset + limit)),
+      total: matching.length,
+      limit,
+      offset,
+      by_severity: countBySeverity(matching.map((item) => item.severity)),
+    };
   }
 
   async getFinding(findingId: string): Promise<Finding> {
     await delay();
 
-    for (const record of this.records.values()) {
-      const detail = mockFindingDetail(record.run.run_id, findingId);
-      if (!detail) continue;
-      this.advance(record);
-      const withOutcome: Finding = { ...detail, ...this.applyOutcome(record, detail) };
-      if (withOutcome.proposed_action && detail.proposed_action) {
-        withOutcome.proposed_action = {
-          ...detail.proposed_action,
-          status: this.actionStatus(record, detail.proposed_action.action_id),
-        };
-      }
-      return clone(withOutcome);
-    }
+    // The finding id names exactly one run. A finding belonging to another run is
+    // a 404 here, never this run's record at the same corpus position.
+    const record = this.ownerOf(this.findingOwners, findingId);
+    const detail = record ? mockFindingDetail(record.run.run_id, findingId) : undefined;
+    if (!record || !detail) throw notFound("finding", findingId);
 
-    throw notFound("finding", findingId);
+    this.advance(record);
+    const withOutcome: Finding = {
+      ...detail,
+      ...this.applyOutcome(record, detail, this.resolvedFindingIds(record)),
+    };
+    if (withOutcome.proposed_action && detail.proposed_action) {
+      withOutcome.proposed_action = {
+        ...detail.proposed_action,
+        status: this.actionStatus(record, detail.proposed_action.action_id),
+      };
+    }
+    return clone(withOutcome);
   }
 
   async previewAction(actionId: string): Promise<CounterfactualPreview> {
     await delay();
-    const record = this.findRecordForAction(actionId);
-    if (!record || actionId !== MOCK_AMENDMENT_ACTION_ID) {
+    // The owning run is resolved exactly, so an older run's action keeps
+    // previewing that run even after a newer run exists.
+    const record = this.ownerOf(this.actionOwners, actionId);
+    // Only the approval-required amendment has a counterfactual preview.
+    if (!record || actionId !== mockAmendmentActionId(record.run.run_id)) {
       throw notFound("action", actionId);
     }
     return clone(mockCounterfactual(actionId, record.run.run_id));
@@ -198,12 +250,12 @@ export class MockRegOpsApi implements RegOpsApi {
   async decideApproval(approvalId: string, body: ApprovalDecision): Promise<Approval> {
     await delay();
 
-    const record = [...this.records.values()].find(
-      (candidate) =>
-        candidate.approvals[approvalId] !== undefined ||
-        candidate.run.pending_approvals?.some((a) => a.approval_id === approvalId),
-    );
+    // Exactly one run owns this approval id; deciding it can never touch another.
+    const record = this.ownerOf(this.approvalOwners, approvalId);
     if (!record) throw notFound("approval", approvalId);
+    // Bring the run up to the state its wall clock implies, so the pending list
+    // this decision is checked against is current.
+    this.advance(record);
 
     const existing = record.approvals[approvalId];
     if (existing && existing.status !== "PENDING") {
@@ -214,29 +266,46 @@ export class MockRegOpsApi implements RegOpsApi {
       });
     }
 
+    // The action and the finding come from the pending record itself. If the run
+    // is not actually waiting on this decision there is no relationship to
+    // record, and the mock fails closed rather than inventing one.
     const pending = record.run.pending_approvals?.find((a) => a.approval_id === approvalId);
-    const actionId = pending?.action_id ?? MOCK_AMENDMENT_ACTION_ID;
+    if (!pending) throw notFound("approval", approvalId);
+
+    const approved = body.decision === "approve";
+    const decidedAt = new Date().toISOString();
 
     const decision: Approval = {
       approval_id: approvalId,
-      action_id: actionId,
+      action_id: pending.action_id,
       run_id: record.run.run_id,
-      status: body.decision === "approve" ? "APPROVED" : "REJECTED",
-      decided_at: new Date().toISOString(),
+      finding_id: pending.finding_id,
+      status: approved ? "APPROVED" : "REJECTED",
+      decided_at: decidedAt,
       // Backend-assigned reviewer identity. The frontend never submits this.
-      decided_by: "demo-reviewer",
+      decided_by: MOCK_REVIEWER_ACTOR,
       note: body.note ?? null,
     };
     record.approvals[approvalId] = decision;
     record.run.pending_approvals = [];
-    record.phaseStartedAt = Date.now();
 
-    // Both outcomes let the run finish. A rejection is a decision, not a failure:
-    // the automatic review task still executes and the run still reaches COMPLETED.
-    // Only the amendment differs — rejected, and never executed.
-    record.decision = body.decision === "approve" ? "approved" : "rejected";
+    // Both outcomes let the run finish. Approval executes the amendment and then
+    // revalidates; rejection executes nothing, so the run goes straight to
+    // COMPLETED without passing through EXECUTING or REVALIDATING. Neither
+    // outcome is a failure.
+    record.decision = approved ? "approved" : "rejected";
     record.phase = "post_approval";
-    this.applyState(record, "EXECUTING");
+    record.phaseStartedAt = Date.now();
+    record.scriptIndex = 0;
+
+    const script = this.scriptFor(record);
+    const firstState = script[0] as RunState;
+    this.applyState(record, firstState, decidedAt, {
+      actor: MOCK_REVIEWER_ACTOR,
+      reason: approved
+        ? "Reviewer approved the proposed amendment."
+        : "Reviewer rejected the proposed amendment; nothing was executed.",
+    });
 
     this.persist();
     return clone(decision);
@@ -265,40 +334,83 @@ export class MockRegOpsApi implements RegOpsApi {
     return record;
   }
 
-  private findRecordForAction(actionId: string): RunRecord | undefined {
-    return [...this.records.values()].find((record) =>
-      mockFindingSummaries(record.run.run_id).some(
-        (summary) =>
-          mockFindingDetail(record.run.run_id, summary.finding_id)?.proposed_action?.action_id ===
-          actionId,
-      ),
-    );
+  /** The run that owns `id` according to an exact index, or undefined. */
+  private ownerOf(index: Map<string, string>, id: string): RunRecord | undefined {
+    const runId = index.get(id);
+    return runId === undefined ? undefined : this.records.get(runId);
   }
 
-  /** Advance the run's state based on how long it has been in the current phase. */
-  private advance(record: RunRecord): void {
-    const script =
-      record.phase === "pre_approval" ? MOCK_PRE_APPROVAL_STATES : MOCK_POST_APPROVAL_STATES;
-    const elapsedSteps = Math.floor((Date.now() - record.phaseStartedAt) / STEP_MS);
-    const index = Math.min(script.length - 1, Math.max(0, elapsedSteps));
-    const nextState = script[index];
+  /** Record every id this run owns, so a lookup never has to guess. */
+  private indexRun(runId: string): void {
+    for (const findingId of mockFindingIds(runId)) this.findingOwners.set(findingId, runId);
+    for (const actionId of mockActionIds(runId)) this.actionOwners.set(actionId, runId);
+    this.approvalOwners.set(mockApprovalId(runId), runId);
+  }
 
-    if (nextState && nextState !== record.run.state) {
-      this.applyState(record, nextState);
+  /** The run-scoped findings this run's approved amendment resolves. */
+  private resolvedFindingIds(record: RunRecord): Set<string> {
+    return new Set(mockResolvedFindingIds(record.run.run_id));
+  }
+
+  private scriptFor(record: RunRecord): RunState[] {
+    if (record.phase === "pre_approval") return MOCK_PRE_APPROVAL_STATES;
+    return record.decision === "rejected" ? MOCK_POST_REJECTION_STATES : MOCK_POST_APPROVAL_STATES;
+  }
+
+  /**
+   * Advance the run to the state its elapsed wall-clock time implies, applying
+   * every intermediate state on the way. Steps are never skipped: the transition
+   * history is the authoritative record and must stay complete even if no browser
+   * tab was open while the run moved.
+   */
+  private advance(record: RunRecord): void {
+    const script = this.scriptFor(record);
+    const elapsedSteps = Math.floor((Date.now() - record.phaseStartedAt) / STEP_MS);
+    const target = Math.min(script.length - 1, Math.max(0, elapsedSteps));
+
+    while (record.scriptIndex < target) {
+      record.scriptIndex += 1;
+      const state = script[record.scriptIndex] as RunState;
+      const occurredAt = new Date(record.phaseStartedAt + record.scriptIndex * STEP_MS).toISOString();
+      const resumed = script[record.scriptIndex - 1] === "FAILED_RECOVERABLE";
+      this.applyState(
+        record,
+        state,
+        occurredAt,
+        resumed ? { reason: "Resumed from the last checkpoint." } : {},
+      );
     }
   }
 
-  private applyState(record: RunRecord, state: RunState): void {
+  private applyState(
+    record: RunRecord,
+    state: RunState,
+    occurredAt: string,
+    transition: { actor?: string; reason?: string } = {},
+  ): void {
+    const previous = record.run.state;
     record.run.state = state;
-    record.run.updated_at = new Date().toISOString();
+    record.run.updated_at = occurredAt;
+    record.run.transitions = [
+      ...record.run.transitions,
+      mockTransition(previous, state, occurredAt, transition),
+    ];
 
     const progress = MOCK_PROGRESS_BY_STATE[state];
     if (progress) {
       record.run.progress = { ...record.run.progress, ...progress };
     }
 
+    if (state === "FAILED_RECOVERABLE") {
+      record.run.recovery = mockRecovery(true);
+    } else if (previous === "FAILED_RECOVERABLE") {
+      // The retry succeeded: the checkpoint and attempt count stay visible, but
+      // no recovery is outstanding any more.
+      record.run.recovery = mockRecovery(false);
+    }
+
     if (hasFindings(state)) {
-      record.run.findings_by_severity = { low: 2, medium: 1, high: 1 };
+      record.run.findings_by_severity = mockFindingsBySeverity();
     }
 
     if (state === "AWAITING_APPROVAL") {
@@ -321,20 +433,32 @@ export class MockRegOpsApi implements RegOpsApi {
     }
   }
 
-  /** Reflect the approval outcome in the finding the amendment targets. */
-  private applyOutcome(record: RunRecord, summary: FindingSummary): FindingSummary {
-    if (summary.finding_id !== "FND-0001") return { ...summary };
-    // Rejection leaves the conflict unaddressed: the finding stays OPEN.
-    if (record.decision === "rejected") return { ...summary, status: "OPEN" };
-    if (record.decision === "approved" && record.run.state === "COMPLETED") {
+  /** Reflect the approval outcome in the findings the amendment covers. */
+  private applyOutcome(
+    record: RunRecord,
+    summary: FindingSummary,
+    resolvedIds: Set<string>,
+  ): FindingSummary {
+    const isAmendmentTarget = summary.finding_id === mockAmendmentFindingId(record.run.run_id);
+
+    if (
+      record.decision === "approved" &&
+      record.run.state === "COMPLETED" &&
+      resolvedIds.has(summary.finding_id)
+    ) {
+      // Revalidation confirmed these are no longer detected.
       return { ...summary, status: "RESOLVED" };
     }
+
+    if (!isAmendmentTarget) return { ...summary };
+    // Rejection leaves the conflict unaddressed: the finding stays OPEN.
+    if (record.decision === "rejected") return { ...summary, status: "OPEN" };
     if (record.run.state === "AWAITING_APPROVAL") return { ...summary, status: "AWAITING_APPROVAL" };
     return { ...summary, status: "OPEN" };
   }
 
   private actionStatus(record: RunRecord, actionId: string): ActionStatus {
-    if (actionId !== MOCK_AMENDMENT_ACTION_ID) {
+    if (actionId !== mockAmendmentActionId(record.run.run_id)) {
       return record.run.state === "COMPLETED" || record.run.state === "EXECUTING"
         ? "EXECUTED"
         : "PENDING";
@@ -372,6 +496,9 @@ export class MockRegOpsApi implements RegOpsApi {
       this.sequence = parsed.sequence ?? 0;
       for (const [id, record] of parsed.records ?? []) {
         this.records.set(id, record);
+        // Ownership follows from the run id, so the index is rebuilt rather than
+        // persisted.
+        this.indexRun(id);
       }
     } catch {
       // A malformed snapshot just means the demo starts fresh.
@@ -380,6 +507,16 @@ export class MockRegOpsApi implements RegOpsApi {
 }
 
 /* ------------------------------------------------------------------ helpers */
+
+function clampLimit(value: number | null | undefined): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return DEFAULT_LIMIT;
+  return Math.min(MAX_LIMIT, Math.max(1, Math.trunc(value)));
+}
+
+function clampOffset(value: number | null | undefined): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return 0;
+  return Math.max(0, Math.trunc(value));
+}
 
 function hasFindings(state: RunState): boolean {
   const withFindings: RunState[] = [
