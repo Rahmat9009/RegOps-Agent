@@ -11,8 +11,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { ChevronLeft, ChevronRight, ListFilter, Loader2, Search } from "lucide-react";
 
-import { api, type FindingSummary } from "@/lib/api";
-import { formatCount, formatRatio, pluralize } from "@/lib/format";
+import {
+  api,
+  type FindingStatus,
+  type FindingSummary,
+  type FindingVerdict,
+  type Severity,
+  type SourceAuthority,
+} from "@/lib/api";
+import { formatCount, pluralize } from "@/lib/format";
 import {
   buildFindingsSearch,
   filterKey,
@@ -33,11 +40,38 @@ import {
 } from "@/lib/presentation";
 import { useAsync } from "@/hooks/useAsync";
 import { Mono, StatusBadge } from "@/components/Badge";
+import { ScoreBar } from "@/components/Meter";
 import { PageHeader } from "@/components/PageHeader";
 import { Panel } from "@/components/Panel";
 import { EmptyState, ErrorState, NoResultsState, SkeletonRows } from "@/components/states";
 
 const SEARCH_DEBOUNCE_MS = 300;
+
+/**
+ * Short labels for the table only. A column heading already supplies the
+ * category, so repeating it in every cell costs width without adding meaning —
+ * and the full label still reaches assistive technology through `srPrefix`.
+ * These are display strings, never identifiers.
+ */
+const SEVERITY_SHORT: Record<Severity, string> = { high: "High", medium: "Medium", low: "Low" };
+
+const VERDICT_SHORT: Record<FindingVerdict, string> = {
+  survived: "Survived",
+  refuted: "Refuted",
+  uncertain: "Uncertain",
+};
+
+const AUTHORITY_SHORT: Record<SourceAuthority, string> = {
+  primary_government: "Primary government",
+  secondary: "Secondary",
+  internal: "Internal",
+};
+
+const STATUS_SHORT: Record<FindingStatus, string> = {
+  OPEN: "Open",
+  AWAITING_APPROVAL: "Awaiting approval",
+  RESOLVED: "Resolved",
+};
 
 export function FindingsPage() {
   const { runId = "" } = useParams();
@@ -178,7 +212,7 @@ export function FindingsPage() {
               range.total === 0 ? (
                 pluralize(0, "finding")
               ) : (
-                `Showing ${formatCount(range.first)}–${formatCount(range.last)} of ${pluralize(
+                `${formatCount(range.first)}–${formatCount(range.last)} of ${pluralize(
                   range.total,
                   "finding",
                 )}`
@@ -205,27 +239,33 @@ export function FindingsPage() {
           </div>
         ) : null}
 
-        <div className="panel__body">
-          {loading ? (
-            <SkeletonRows rows={4} />
-          ) : error ? (
+        {loading ? (
+          <div className="panel__body">
+            <SkeletonRows rows={6} />
+          </div>
+        ) : error ? (
+          <div className="panel__body">
             <ErrorState
               error={error}
               onRetry={reload}
               fallbackHref={`/runs/${runId}`}
               fallbackLabel="Back to run detail"
             />
-          ) : items.length === 0 && filtersActive ? (
+          </div>
+        ) : items.length === 0 && filtersActive ? (
+          <div className="panel__body">
             <NoResultsState onClear={clearFilters} />
-          ) : items.length === 0 ? (
+          </div>
+        ) : items.length === 0 ? (
+          <div className="panel__body">
             <EmptyState icon={Search} title="No findings yet">
-              Findings appear after the mapping stage produces candidates and verification assigns
-              a verdict. Keep the run detail page open to watch progress.
+              Findings appear after the mapping stage produces candidates and verification assigns a
+              verdict. Keep the run detail page open to watch progress.
             </EmptyState>
-          ) : (
-            <FindingsTable items={items} />
-          )}
-        </div>
+          </div>
+        ) : (
+          <FindingsTable items={items} />
+        )}
 
         {data && (range.hasPrevious || range.hasNext) ? (
           <nav className="pager" aria-label="Findings pages">
@@ -261,19 +301,24 @@ export function FindingsPage() {
   );
 }
 
+/**
+ * The table scrolls inside its own container in both directions, so a wide row
+ * never pushes the page sideways and the column headings stay put while a long
+ * page is read.
+ */
 function FindingsTable({ items }: { items: FindingSummary[] }) {
   return (
-    <div className="table-wrap">
-      <table className="table">
-        <caption>
-          Every finding shows its verdict, operational severity, evidence strength, source
-          authority, interpretation confidence, and whether human review is required.
+    <div className="table-wrap table-wrap--tall">
+      <table className="table table--dense">
+        <caption className="sr-only">
+          Every finding shows its operational severity, relationship, verdict, evidence strength,
+          source authority, interpretation confidence, and whether human review is required.
         </caption>
         <thead>
           <tr>
             <th scope="col">Finding</th>
-            <th scope="col">Relationship</th>
             <th scope="col">Severity</th>
+            <th scope="col">Relationship</th>
             <th scope="col">Verdict</th>
             <th scope="col">Evidence</th>
             <th scope="col">Interpretation</th>
@@ -284,7 +329,7 @@ function FindingsTable({ items }: { items: FindingSummary[] }) {
         <tbody>
           {items.map((item) => (
             <tr key={item.finding_id}>
-              <th scope="row" style={{ background: "transparent", textTransform: "none" }}>
+              <th scope="row" className="rowhead">
                 <Link to={`/findings/${item.finding_id}`}>
                   <Mono>{item.finding_id}</Mono>
                 </Link>
@@ -294,27 +339,38 @@ function FindingsTable({ items }: { items: FindingSummary[] }) {
               </th>
               <td>
                 <StatusBadge
-                  descriptor={RELATIONSHIP[item.relationship]}
-                  srPrefix="Relationship:"
+                  descriptor={SEVERITY[item.severity]}
+                  label={SEVERITY_SHORT[item.severity]}
+                  srPrefix={`Severity: ${SEVERITY[item.severity].label},`}
                 />
               </td>
               <td>
-                <StatusBadge descriptor={SEVERITY[item.severity]} srPrefix="Severity:" />
+                <StatusBadge descriptor={RELATIONSHIP[item.relationship]} srPrefix="Relationship:" />
               </td>
               <td>
-                <StatusBadge descriptor={VERDICT[item.verdict]} srPrefix="Verdict:" />
+                <StatusBadge
+                  descriptor={VERDICT[item.verdict]}
+                  label={VERDICT_SHORT[item.verdict]}
+                  srPrefix={`Verdict: ${VERDICT[item.verdict].label},`}
+                />
               </td>
               <td>
                 <span className="stack stack--tight">
-                  <strong>{formatRatio(item.scores.evidence_strength)}</strong>
+                  <ScoreBar label="Evidence strength" value={item.scores.evidence_strength} />
                   <StatusBadge
                     descriptor={SOURCE_AUTHORITY[item.scores.source_authority]}
-                    srPrefix="Source authority:"
+                    label={AUTHORITY_SHORT[item.scores.source_authority]}
+                    srPrefix={`Source authority: ${
+                      SOURCE_AUTHORITY[item.scores.source_authority].label
+                    },`}
                   />
                 </span>
               </td>
               <td>
-                <strong>{formatRatio(item.scores.interpretation_confidence)}</strong>
+                <ScoreBar
+                  label="Interpretation confidence"
+                  value={item.scores.interpretation_confidence}
+                />
               </td>
               <td>
                 <StatusBadge
@@ -324,7 +380,11 @@ function FindingsTable({ items }: { items: FindingSummary[] }) {
                 />
               </td>
               <td>
-                <StatusBadge descriptor={FINDING_STATUS[item.status]} srPrefix="Status:" />
+                <StatusBadge
+                  descriptor={FINDING_STATUS[item.status]}
+                  label={STATUS_SHORT[item.status]}
+                  srPrefix="Status:"
+                />
               </td>
             </tr>
           ))}

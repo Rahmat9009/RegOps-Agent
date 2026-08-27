@@ -243,13 +243,33 @@ export function ApprovalPage() {
         }
       />
 
+      {outcome ? (
+        <DecisionOutcome decision={outcome} runId={run.run_id} />
+      ) : (
+        <div className="gate">
+          <span className="gate__icon" aria-hidden="true">
+            <ShieldAlert size={22} />
+          </span>
+          <div>
+            <strong className="gate__title">This action will not run without your decision</strong>
+            <p className="gate__text">
+              The pipeline is stopped at <Mono>AWAITING_APPROVAL</Mono> and stays there. Nothing is
+              written, executed or revalidated until a reviewer approves or rejects the exact action
+              below.
+            </p>
+          </div>
+        </div>
+      )}
+
       <Notice tone="review" title="Approval does not modify a real contract" icon={FlaskConical}>
         {SHADOW_COPY_NOTICE}
       </Notice>
 
-      {outcome ? <DecisionOutcome decision={outcome} runId={run.run_id} /> : null}
-
-      <Panel title="Proposed amendment" icon={FileSignature}>
+      <Panel
+        title="Proposed amendment"
+        icon={FileSignature}
+        tone={outcome ? (outcome.status === "APPROVED" ? "verified" : "critical") : "review"}
+      >
         {action ? (
           <div className="stack">
             <div className="chip-row">
@@ -356,32 +376,41 @@ export function ApprovalPage() {
                   Before — current shadow baseline
                 </div>
                 <div className="compare__body">
-                  <p>
-                    <strong>{formatCount(preview.baseline_finding_count)}</strong> findings detected
-                    today.
-                  </p>
+                  <p className="compare__figure">{formatCount(preview.baseline_finding_count)}</p>
+                  <p>findings detected today.</p>
                   <p className="field__hint">
                     Including <Mono>{finding?.finding_id ?? "this finding"}</Mono>, which is what
                     this amendment targets.
                   </p>
                 </div>
               </div>
-              <div className="compare__col">
+              <div className="compare__col compare__col--after">
                 <div className="compare__head">
-                  <CheckCircle2 size={15} aria-hidden="true" />
+                  <FlaskConical size={15} aria-hidden="true" />
                   After — simulated shadow copy
                 </div>
                 <div className="compare__body">
-                  <p>
-                    <strong>{formatCount(preview.resolved_finding_ids.length)}</strong> predicted to
-                    resolve · <strong>{formatCount(preview.unchanged_finding_ids.length)}</strong>{" "}
-                    unchanged ·{" "}
-                    <strong>{formatCount(preview.new_conflict_ids.length)}</strong> new conflicts.
-                  </p>
-                  <p className="field__hint">
-                    {pluralize(preview.remaining_high_risk_ids.length, "high-risk finding")} would
-                    remain.
-                  </p>
+                  <dl className="dl">
+                    <dt>Resolved</dt>
+                    <dd>
+                      {pluralize(preview.resolved_finding_ids.length, "finding")} would no longer be
+                      detected
+                    </dd>
+                    <dt>Remaining</dt>
+                    <dd>
+                      {pluralize(preview.unchanged_finding_ids.length, "finding")} would still be
+                      detected
+                    </dd>
+                    <dt>New conflicts</dt>
+                    <dd>
+                      {pluralize(preview.new_conflict_ids.length, "conflict")} introduced by this
+                      action
+                    </dd>
+                    <dt>High risk left</dt>
+                    <dd>
+                      {pluralize(preview.remaining_high_risk_ids.length, "high-risk finding")}
+                    </dd>
+                  </dl>
                 </div>
               </div>
             </div>
@@ -403,7 +432,11 @@ export function ApprovalPage() {
         )}
       </Panel>
 
-      <Panel title="Record your decision" icon={UserCheck}>
+      <Panel
+        title="Record your decision"
+        icon={UserCheck}
+        tone={outcome ? (outcome.status === "APPROVED" ? "verified" : "critical") : "review"}
+      >
         {outcome ? (
           <Notice tone={outcome.status === "APPROVED" ? "verified" : "critical"} title="Decision recorded">
             This approval is now <strong>{APPROVAL_STATUS[outcome.status].label}</strong>. It cannot
@@ -464,52 +497,63 @@ export function ApprovalPage() {
               </Notice>
             ) : null}
 
-            <Notice tone="review" title="What each decision does">
-              <p>
-                <strong>Approving</strong> stores an <Mono>APPROVED_DRAFT</Mono> amendment against a
-                synthetic contract&rsquo;s shadow copy and lets the run continue through execution
-                and revalidation. It does not change a real contract, and it is not a legal
-                determination.
-              </p>
-              <p>
-                <strong>Rejecting</strong> is an equally valid outcome, not a failure. The amendment
-                is marked <Mono>REJECTED</Mono> and never executed, the finding stays{" "}
-                <Mono>OPEN</Mono>, and the run completes directly from{" "}
-                <Mono>AWAITING_APPROVAL</Mono> without executing or revalidating anything. The
-                rejected amendment appears in neither the run&rsquo;s completed actions nor the
-                audit&rsquo;s executed actions.
-              </p>
-            </Notice>
+            {/* The two decisions are not mirror images, so they are not presented
+                as a matched pair of buttons. Each states what it actually does
+                before its control, and the control sits with that statement. */}
+            <div className="decision">
+              <div className="decision__option decision__option--approve">
+                <strong className="decision__heading">
+                  <CheckCircle2 size={18} aria-hidden="true" />
+                  Approve
+                </strong>
+                <p className="decision__text">
+                  Stores an <Mono>APPROVED_DRAFT</Mono> amendment against a synthetic
+                  contract&rsquo;s shadow copy and lets the run continue through execution and
+                  revalidation. It does not change a real contract, and it is not a legal
+                  determination.
+                </p>
+                <button
+                  type="button"
+                  className="btn btn--approve btn--lg"
+                  disabled={submitting !== null || !eligibility.canApprove}
+                  onClick={() => void decide("approve")}
+                  aria-describedby={eligibility.canApprove ? undefined : "decision-blockers"}
+                >
+                  {submitting === "approve" ? (
+                    <Loader2 size={17} aria-hidden="true" className="spin" />
+                  ) : (
+                    <CheckCircle2 size={17} aria-hidden="true" />
+                  )}
+                  Approve draft amendment
+                </button>
+              </div>
 
-            <div className="row">
-              <button
-                type="button"
-                className="btn btn--approve"
-                disabled={submitting !== null || !eligibility.canApprove}
-                onClick={() => void decide("approve")}
-                aria-describedby={eligibility.canApprove ? undefined : "decision-blockers"}
-              >
-                {submitting === "approve" ? (
-                  <Loader2 size={16} aria-hidden="true" className="spin" />
-                ) : (
-                  <CheckCircle2 size={16} aria-hidden="true" />
-                )}
-                Approve draft amendment
-              </button>
-              <button
-                type="button"
-                className="btn btn--reject"
-                disabled={submitting !== null || !eligibility.canReject}
-                onClick={() => void decide("reject")}
-                aria-describedby={eligibility.canReject ? undefined : "decision-blockers"}
-              >
-                {submitting === "reject" ? (
-                  <Loader2 size={16} aria-hidden="true" className="spin" />
-                ) : (
-                  <XCircle size={16} aria-hidden="true" />
-                )}
-                Reject
-              </button>
+              <div className="decision__option decision__option--reject">
+                <strong className="decision__heading">
+                  <XCircle size={18} aria-hidden="true" />
+                  Reject
+                </strong>
+                <p className="decision__text">
+                  An equally valid outcome, not a failure. The amendment is marked{" "}
+                  <Mono>REJECTED</Mono> and never executed, the finding stays <Mono>OPEN</Mono>, and
+                  the run completes directly from <Mono>AWAITING_APPROVAL</Mono> without executing
+                  or revalidating anything. Nothing is destroyed.
+                </p>
+                <button
+                  type="button"
+                  className="btn btn--reject btn--lg"
+                  disabled={submitting !== null || !eligibility.canReject}
+                  onClick={() => void decide("reject")}
+                  aria-describedby={eligibility.canReject ? undefined : "decision-blockers"}
+                >
+                  {submitting === "reject" ? (
+                    <Loader2 size={17} aria-hidden="true" className="spin" />
+                  ) : (
+                    <XCircle size={17} aria-hidden="true" />
+                  )}
+                  Reject this amendment
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -522,50 +566,54 @@ function DecisionOutcome({ decision, runId }: { decision: Approval; runId: strin
   const approved = decision.status === "APPROVED";
 
   return (
-    <Notice
-      tone={approved ? "verified" : "critical"}
-      title={
-        approved
-          ? "Approved — recorded as a draft"
-          : "Rejected — the amendment was not executed and the run completes without it"
-      }
-      live
+    <section
+      className={approved ? "outcome outcome--verified" : "outcome outcome--critical"}
+      role="status"
+      aria-label="Decision recorded"
     >
-      <dl className="dl">
-        <dt>Finding</dt>
-        <dd>
-          <Link to={`/findings/${decision.finding_id}`}>
-            <Mono>{decision.finding_id}</Mono>
-          </Link>
-        </dd>
-        <dt>Decided at</dt>
-        <dd>{formatDateTime(decision.decided_at)}</dd>
-        <dt>Reviewer</dt>
-        <dd>
-          <Mono>{decision.decided_by ?? "not reported"}</Mono>
-          <span className="field__hint"> — assigned by the backend, not submitted by this console.</span>
-        </dd>
-        {decision.note ? (
-          <>
-            <dt>Note</dt>
-            <dd>{decision.note}</dd>
-          </>
-        ) : null}
-      </dl>
-      <p>
-        {approved ? (
-          <>
-            <Link to={`/runs/${runId}`}>Return to run detail</Link> to watch execution and
-            revalidation.
-          </>
-        ) : (
-          <>
-            Nothing was executed and nothing is revalidated.{" "}
-            <Link to={`/runs/${runId}`}>Return to run detail</Link> to see the run complete with an
-            audit record.
-          </>
-        )}
-      </p>
-    </Notice>
+      <span className="outcome__icon" aria-hidden="true">
+        {approved ? <CheckCircle2 size={26} /> : <XCircle size={26} />}
+      </span>
+      <div className="outcome__body stack stack--tight">
+        <strong className="outcome__title">
+          {approved ? "Approved — recorded as a draft" : "Rejected — nothing was executed"}
+        </strong>
+        <p className="outcome__text">
+          {approved
+            ? "The amendment is stored against a synthetic contract's shadow copy. The run continues through execution and revalidation."
+            : "The amendment is marked REJECTED and never ran. The finding stays open and the run completes without executing or revalidating anything."}
+        </p>
+        <dl className="dl">
+          <dt>Finding</dt>
+          <dd>
+            <Link to={`/findings/${decision.finding_id}`}>
+              <Mono>{decision.finding_id}</Mono>
+            </Link>
+          </dd>
+          <dt>Decided at</dt>
+          <dd>{formatDateTime(decision.decided_at)}</dd>
+          <dt>Reviewer</dt>
+          <dd>
+            <Mono>{decision.decided_by ?? "not reported"}</Mono>
+            <span className="field__hint">
+              {" "}
+              — assigned by the backend, not submitted by this console.
+            </span>
+          </dd>
+          {decision.note ? (
+            <>
+              <dt>Note</dt>
+              <dd>{decision.note}</dd>
+            </>
+          ) : null}
+        </dl>
+        <p className="outcome__text">
+          <Link to={`/runs/${runId}`}>Return to run detail</Link>
+          {approved
+            ? " to watch execution and revalidation."
+            : " to see the run complete with an audit record."}
+        </p>
+      </div>
+    </section>
   );
 }

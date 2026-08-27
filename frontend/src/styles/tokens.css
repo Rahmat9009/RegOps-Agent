@@ -1,73 +1,121 @@
-/* tokens.css — The whole palette. Restrained neutrals plus four semantic colours:
-   blue = information, amber = review, red = high severity, green = verified
-   completion only. Colour never carries meaning alone; every status in the UI is
-   rendered as icon + text + colour. */
+/* tokens.css — The RegOps design system.
+ *
+ * Brand foundation: a deep navy console chrome over a cool slate canvas.
+ * Semantic colour is deliberately narrow, and colour NEVER carries meaning on
+ * its own — every status in this console is rendered as icon + text + colour.
+ *
+ *   blue    information / an active workflow state
+ *   teal    verified completion only
+ *   amber   awaiting review, recovery, disclosure
+ *   coral   rejected, failed, high severity
+ *   violet  the model boundary — simulation and generated narrative
+ *
+ * Violet is not a status. It marks the places where the reader is looking at a
+ * shadow-state simulation or model-written prose rather than a recorded fact,
+ * and it is always paired with an explicit label saying so.
+ */
 
 :root {
   color-scheme: light dark;
 
-  /* Surfaces */
-  --canvas: #f4f6f8;
+  /* ---------------------------------------------------------- backgrounds */
+  --canvas: #eceff5;
+  --canvas-grid: #e3e7ef;
   --surface: #ffffff;
-  --surface-sunken: #f8fafb;
+  --surface-sunken: #f4f6fa;
   --surface-raised: #ffffff;
-  --overlay: rgb(18 24 31 / 45%);
+  --surface-inset: #eef1f7;
+  --overlay: rgb(11 21 34 / 46%);
 
-  /* Lines */
-  --border: #dde2e8;
-  --border-strong: #c0c8d2;
+  /* Console chrome — the navy frame that holds the workspace. */
+  --chrome: #0d1a2b;
+  --chrome-2: #16273c;
+  --chrome-line: #223549;
+  --chrome-ink: #e8eef7;
+  --chrome-ink-2: #a9bcd3;
+  --chrome-ink-3: #7e93ad;
+  --chrome-accent: #5aa2f0;
 
-  /* Ink */
-  --ink: #101720;
-  --ink-2: #39434f;
-  --ink-3: #64707e;
+  /* ---------------------------------------------------------------- lines */
+  --border: #d8dfea;
+  --border-strong: #b4c0d0;
+  --border-hair: #e6eaf2;
+
+  /* ------------------------------------------------------------------ ink */
+  --ink: #0b1520;
+  --ink-2: #3a4757;
+  --ink-3: #5d6b7d;
   --ink-inverse: #ffffff;
 
-  /* Blue — information */
-  --info-fg: #14509a;
-  --info-bg: #e8f0fb;
-  --info-border: #b8d0ee;
+  /* Blue — information, active workflow */
+  --info-fg: #12508f;
+  --info-bg: #e7f0fb;
+  --info-border: #b6d1ef;
   --info-solid: #1a63bd;
+  --info-glow: rgb(26 99 189 / 22%);
 
-  /* Amber — review / attention */
-  --review-fg: #8a5200;
-  --review-bg: #fdf2e0;
-  --review-border: #f0d5a5;
+  /* Amber — review / attention / recovery */
+  --review-fg: #86500a;
+  --review-bg: #fdf1de;
+  --review-border: #f0d3a1;
   --review-solid: #b06c00;
+  --review-glow: rgb(176 108 0 / 22%);
 
-  /* Red — high severity / failure */
+  /* Coral — rejected, failed, high severity */
   --critical-fg: #9c211b;
-  --critical-bg: #fceceb;
-  --critical-border: #f2c1bd;
+  --critical-bg: #fcecea;
+  --critical-border: #f2c0bb;
   --critical-solid: #b3271f;
+  --critical-glow: rgb(179 39 31 / 20%);
 
-  /* Green — verified completion only */
-  --verified-fg: #14603d;
-  --verified-bg: #e6f3ec;
-  --verified-border: #b3ddc6;
-  --verified-solid: #1a7a4c;
+  /* Teal — verified completion only */
+  --verified-fg: #0d5f45;
+  --verified-bg: #e2f2ec;
+  --verified-border: #a8d8c6;
+  --verified-solid: #10795a;
+  --verified-glow: rgb(16 121 90 / 20%);
+
+  /* Violet — model boundary: simulation and generated narrative */
+  --model-fg: #4a3ba8;
+  --model-bg: #eeecfb;
+  --model-border: #cbc4ef;
+  --model-solid: #5b4bc4;
 
   /* Neutral status */
   --neutral-fg: #414c58;
-  --neutral-bg: #eef1f4;
-  --neutral-border: #d5dbe2;
+  --neutral-bg: #eaeef4;
+  --neutral-border: #d3dae4;
 
   --focus-ring: #1a63bd;
+  --focus-ring-inverse: #7fb4f5;
 
-  /* Type */
+  /* A translucent wash used on top of a tinted surface, e.g. the amber
+     disclosure strip. Inverted in dark mode so it stays a highlight. */
+  --scrim: rgb(255 255 255 / 45%);
+
+  /* ----------------------------------------------------------------- type */
+  --font-display:
+    "Inter Tight", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --font-sans:
     "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial,
     sans-serif;
-  --font-mono: ui-monospace, "SFMono-Regular", "Cascadia Mono", "Consolas", monospace;
+  --font-mono:
+    "JetBrains Mono", ui-monospace, "SFMono-Regular", "Cascadia Mono", "Consolas", monospace;
 
+  --step--2: 0.6875rem;
   --step--1: 0.8125rem;
   --step-0: 0.9375rem;
   --step-1: 1.0625rem;
   --step-2: 1.3125rem;
   --step-3: 1.625rem;
-  --step-4: 2rem;
+  --step-4: 2.125rem;
+  --step-5: 2.75rem;
 
-  /* Space */
+  /* The eyebrow: mono, uppercase, wide. The console's structural voice. */
+  --eyebrow-size: 0.6875rem;
+  --eyebrow-tracking: 0.1em;
+
+  /* ---------------------------------------------------------------- space */
   --space-1: 0.25rem;
   --space-2: 0.5rem;
   --space-3: 0.75rem;
@@ -75,60 +123,100 @@
   --space-5: 1.5rem;
   --space-6: 2rem;
   --space-7: 3rem;
+  --space-8: 4rem;
 
   --radius-sm: 4px;
-  --radius: 6px;
-  --radius-lg: 10px;
+  --radius: 7px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
 
-  --shadow-sm: 0 1px 2px rgb(16 23 32 / 6%);
-  --shadow: 0 1px 3px rgb(16 23 32 / 8%), 0 6px 16px rgb(16 23 32 / 5%);
+  /* ------------------------------------------------------------ elevation */
+  --shadow-sm: 0 1px 2px rgb(11 21 34 / 6%);
+  --shadow: 0 1px 2px rgb(11 21 34 / 5%), 0 4px 12px rgb(11 21 34 / 6%);
+  --shadow-lg: 0 2px 4px rgb(11 21 34 / 5%), 0 12px 32px rgb(11 21 34 / 10%);
+  --shadow-inset: inset 0 1px 0 rgb(255 255 255 / 60%);
 
-  --sidebar-width: 15.5rem;
+  /* --------------------------------------------------------------- motion */
+  --dur-fast: 160ms;
+  --dur: 200ms;
+  --dur-slow: 280ms;
+  --dur-page: 320ms;
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* --------------------------------------------------------------- layout */
+  --sidebar-width: 16rem;
+  --page-max: 80rem;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --canvas: #0e1319;
-    --surface: #161d25;
-    --surface-sunken: #121820;
-    --surface-raised: #1b232c;
-    --overlay: rgb(4 7 10 / 62%);
+    --canvas: #0b1119;
+    --canvas-grid: #141c26;
+    --surface: #131c26;
+    --surface-sunken: #0f1720;
+    --surface-raised: #18222e;
+    --surface-inset: #0d151d;
+    --overlay: rgb(3 6 10 / 64%);
 
-    --border: #29323d;
-    --border-strong: #3c4756;
+    --chrome: #080d15;
+    --chrome-2: #101823;
+    --chrome-line: #1d2937;
+    --chrome-ink: #e6edf7;
+    --chrome-ink-2: #9fb2c9;
+    --chrome-ink-3: #74889f;
+    --chrome-accent: #6cb0f6;
 
-    --ink: #eef2f6;
-    --ink-2: #c2cbd5;
-    --ink-3: #8d99a6;
-    --ink-inverse: #0e1319;
+    --border: #253141;
+    --border-strong: #3a4759;
+    --border-hair: #1b2430;
 
-    --info-fg: #9ec5f5;
-    --info-bg: #14243a;
-    --info-border: #2b445f;
+    --ink: #eff3f8;
+    --ink-2: #c3cddb;
+    --ink-3: #93a1b3;
+    --ink-inverse: #0b1119;
+
+    --info-fg: #a2c8f7;
+    --info-bg: #10233a;
+    --info-border: #29455f;
     --info-solid: #4a90e2;
+    --info-glow: rgb(74 144 226 / 28%);
 
     --review-fg: #f0c078;
-    --review-bg: #33240c;
-    --review-border: #5b431a;
+    --review-bg: #2f210b;
+    --review-border: #573f18;
     --review-solid: #d08c1a;
+    --review-glow: rgb(208 140 26 / 28%);
 
-    --critical-fg: #f4a9a2;
-    --critical-bg: #371816;
-    --critical-border: #5d2b26;
+    --critical-fg: #f5aaa3;
+    --critical-bg: #331614;
+    --critical-border: #582823;
     --critical-solid: #d9534a;
+    --critical-glow: rgb(217 83 74 / 26%);
 
-    --verified-fg: #86d0a8;
-    --verified-bg: #10291d;
-    --verified-border: #23492f;
-    --verified-solid: #35a06b;
+    --verified-fg: #7fd2b3;
+    --verified-bg: #0c2620;
+    --verified-border: #1f4739;
+    --verified-solid: #23a17c;
+    --verified-glow: rgb(35 161 124 / 26%);
+
+    --model-fg: #b8aef5;
+    --model-bg: #1c1836;
+    --model-border: #322c5c;
+    --model-solid: #7b6ade;
 
     --neutral-fg: #b6c0cb;
-    --neutral-bg: #1f272f;
-    --neutral-border: #333d48;
+    --neutral-bg: #1c2530;
+    --neutral-border: #2f3b49;
 
     --focus-ring: #6ba8ec;
+    --focus-ring-inverse: #6ba8ec;
 
-    --shadow-sm: 0 1px 2px rgb(0 0 0 / 30%);
-    --shadow: 0 1px 3px rgb(0 0 0 / 35%), 0 6px 16px rgb(0 0 0 / 28%);
+    --scrim: rgb(255 255 255 / 7%);
+
+    --shadow-sm: 0 1px 2px rgb(0 0 0 / 34%);
+    --shadow: 0 1px 2px rgb(0 0 0 / 30%), 0 4px 12px rgb(0 0 0 / 30%);
+    --shadow-lg: 0 2px 4px rgb(0 0 0 / 30%), 0 12px 32px rgb(0 0 0 / 40%);
+    --shadow-inset: inset 0 1px 0 rgb(255 255 255 / 4%);
   }
 }

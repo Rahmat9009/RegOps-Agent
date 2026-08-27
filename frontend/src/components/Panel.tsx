@@ -4,6 +4,9 @@
 import { useId } from "react";
 import type { LucideIcon } from "lucide-react";
 
+/** A coloured top edge, for a panel that carries a decision or a boundary. */
+export type PanelTone = "review" | "model" | "verified" | "critical";
+
 export interface PanelProps {
   title: string;
   icon?: LucideIcon;
@@ -11,6 +14,8 @@ export interface PanelProps {
   actions?: React.ReactNode;
   /** Remove body padding, e.g. for a full-bleed table. */
   flush?: boolean;
+  /** Marks the panel as consequential; never the only signal of its meaning. */
+  tone?: PanelTone;
   children: React.ReactNode;
 }
 
@@ -20,12 +25,16 @@ export function Panel({
   description,
   actions,
   flush = false,
+  tone,
   children,
 }: PanelProps) {
   const headingId = useId();
 
   return (
-    <section className="panel" aria-labelledby={headingId}>
+    <section
+      className={tone ? `panel panel--${tone}` : "panel"}
+      aria-labelledby={headingId}
+    >
       <div className="panel__head">
         <h2 className="panel__title" id={headingId}>
           {Icon ? <Icon size={17} aria-hidden="true" /> : null}

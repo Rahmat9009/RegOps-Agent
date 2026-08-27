@@ -13,6 +13,8 @@ import {
   RUN_STATE,
   shortenHash,
 } from "@/lib/presentation";
+import { RefreshCw } from "lucide-react";
+
 import { Mono, StatusBadge } from "@/components/Badge";
 
 /**
@@ -41,12 +43,26 @@ export function RecoveryDetails({ recovery }: { recovery: RecoveryInfo | null | 
 
   const descriptor = recoveryDescriptor(recovery);
 
+  // A checkpoint is the important part of a recovery record: it says the run did
+  // not start over. It is called out plainly rather than alarmingly.
+  const checkpointState = recovery.attempt_count > 0 ? recovery.checkpoint_state : null;
+
   return (
     <div className="stack stack--tight">
       <div className="chip-row">
         <StatusBadge descriptor={descriptor} srPrefix="Recovery:" />
       </div>
       <p className="field__hint">{descriptor.description}</p>
+      {checkpointState ? (
+        <p className="checkpoint">
+          <RefreshCw size={15} aria-hidden="true" />
+          <span>
+            Resumed from the <strong>{RUN_STATE[checkpointState].label.toLowerCase()}</strong>{" "}
+            checkpoint after {pluralize(recovery.attempt_count, "attempt")}. Work completed before
+            the failure was not repeated.
+          </span>
+        </p>
+      ) : null}
       <dl className="dl">
         <dt>Checkpoint</dt>
         <dd>

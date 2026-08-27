@@ -159,7 +159,7 @@ function EvidenceDetail({ finding }: { finding: Finding }) {
             title={finding.target_id}
           >
             {targetEvidence ? (
-              <EvidenceQuote evidence={targetEvidence} />
+              <EvidenceQuote evidence={targetEvidence} target />
             ) : (
               <p className="field__hint">
                 No contract or policy quote was returned in the evidence path for this finding.
@@ -249,6 +249,7 @@ function EvidenceDetail({ finding }: { finding: Finding }) {
             step="6 · Verifier verdict"
             icon={ShieldCheck}
             title={VERDICT[finding.verdict].label}
+            final
           >
             <p>{VERDICT[finding.verdict].description}</p>
             <div className="chip-row">
@@ -263,7 +264,11 @@ function EvidenceDetail({ finding }: { finding: Finding }) {
       </Panel>
 
       <div className="grid grid--2">
-        <Panel title="Confidence and authority" icon={ShieldCheck}>
+        <Panel
+          title="Confidence and authority"
+          icon={ShieldCheck}
+          description="How strongly this finding is supported. These are detection scores, not a legal opinion."
+        >
           <div className="stack">
             <ScoreMeter
               label="Evidence strength"
@@ -342,15 +347,18 @@ function ChainStep({
   step,
   icon: Icon,
   title,
+  final = false,
   children,
 }: {
   step: string;
   icon: LucideIcon;
   title: string;
+  /** The last link: where the chain arrives at a verdict. */
+  final?: boolean;
   children: React.ReactNode;
 }) {
   return (
-    <li className="evidence-link">
+    <li className={final ? "evidence-link evidence-link--final" : "evidence-link"}>
       <span className="evidence-link__marker" aria-hidden="true">
         <Icon size={15} />
       </span>
@@ -366,12 +374,15 @@ function ChainStep({
 function EvidenceQuote({
   evidence,
   showLink = true,
+  target = false,
 }: {
   evidence: EvidenceReference;
   showLink?: boolean;
+  /** A quote from the document the obligation collides with, not the source. */
+  target?: boolean;
 }) {
   return (
-    <figure className="quote">
+    <figure className={target ? "quote quote--target" : "quote"}>
       <blockquote cite={evidence.doc_id}>{evidence.quote}</blockquote>
       <footer>
         {humanizeToken(evidence.doc_kind)} <Mono>{evidence.doc_id}</Mono>, page {evidence.page}

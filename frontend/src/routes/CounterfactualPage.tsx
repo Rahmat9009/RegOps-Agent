@@ -22,7 +22,7 @@ import {
 import { api, type CounterfactualPreview } from "@/lib/api";
 import { formatCount, pluralize } from "@/lib/format";
 import { useAsync } from "@/hooks/useAsync";
-import { Mono, StatusBadge } from "@/components/Badge";
+import { Mono } from "@/components/Badge";
 import { Notice } from "@/components/Notice";
 import { PageHeader } from "@/components/PageHeader";
 import { Panel } from "@/components/Panel";
@@ -51,18 +51,26 @@ export function CounterfactualPage() {
         lede="What the finding picture would look like if this action were applied. Nothing here has been executed."
         crumbs={crumbs}
         status={
-          <span className="badge badge--review badge--lg">
+          <span className="sim-mark sim-mark--lg">
             <FlaskConical size={18} aria-hidden="true" />
             Shadow-state simulation
           </span>
         }
       />
 
-      <Notice tone="review" title="This is a shadow-state simulation" icon={FlaskConical}>
-        The result below comes from rerunning the same matching and validation pipeline against a{" "}
-        <strong>shadow copy</strong> of the synthetic corpus. No document has been changed, no
-        action has been executed, and nothing here is a legal determination.
-      </Notice>
+      {/* Violet marks the model boundary throughout the console: everything inside
+          this frame is a simulated projection, never a recorded fact. */}
+      <div className="sim-note">
+        <FlaskConical size={17} aria-hidden="true" />
+        <div>
+          <strong className="sim-note__title">This is a shadow-state simulation</strong>
+          <p>
+            The result below comes from rerunning the same matching and validation pipeline against
+            a <strong>shadow copy</strong> of the synthetic corpus. No document has been changed, no
+            action has been executed, and nothing here is a legal determination.
+          </p>
+        </div>
+      </div>
 
       {loading ? (
         <Panel title="Predicted outcome" icon={GitCompare}>
@@ -109,30 +117,34 @@ function PreviewContent({
         <div className="stack">
           <div className="grid grid--4">
             <Stat
+              index={0}
               label="Findings before"
               value={formatCount(preview.baseline_finding_count)}
               note="Baseline detected today"
-              icon={<Layers size={14} aria-hidden="true" />}
+              icon={<Layers size={13} aria-hidden="true" />}
             />
             <Stat
+              index={1}
               label="Predicted to resolve"
               value={formatCount(resolved)}
               tone="verified"
               note="Would no longer be detected"
-              icon={<CheckCircle2 size={14} aria-hidden="true" />}
+              icon={<CheckCircle2 size={13} aria-hidden="true" />}
             />
             <Stat
+              index={2}
               label="Unchanged"
               value={formatCount(unchanged)}
               note="Still detected afterwards"
-              icon={<CircleDashed size={14} aria-hidden="true" />}
+              icon={<CircleDashed size={13} aria-hidden="true" />}
             />
             <Stat
+              index={3}
               label="New conflicts introduced"
               value={formatCount(introduced)}
               tone={introduced > 0 ? "critical" : "neutral"}
               note={introduced > 0 ? "Caused by this action" : "None introduced"}
-              icon={<AlertTriangle size={14} aria-hidden="true" />}
+              icon={<AlertTriangle size={13} aria-hidden="true" />}
             />
           </div>
 
@@ -185,7 +197,8 @@ function PreviewContent({
       <Panel
         title="Narrative"
         icon={MessageSquareText}
-        description="Explanatory text only. The counts and identifiers above are authoritative; this paragraph is not."
+        description="Model-written explanatory text. The counts and identifiers above are authoritative; this paragraph is not."
+        tone="model"
       >
         {preview.narrative ? (
           <>
@@ -214,16 +227,14 @@ function PreviewContent({
         </div>
       ) : null}
 
-      <p className="field__hint">
-        <StatusBadge
-          descriptor={{
-            label: "Simulation only",
-            tone: "review",
-            icon: FlaskConical,
-            description: "",
-          }}
-        />{" "}
-        Shadow run <Mono>{preview.shadow_run_id}</Mono> is discarded after the preview.
+      <p className="row">
+        <span className="sim-mark">
+          <FlaskConical size={14} aria-hidden="true" />
+          Simulation only
+        </span>
+        <span className="field__hint">
+          Shadow run <Mono>{preview.shadow_run_id}</Mono> is discarded after the preview.
+        </span>
       </p>
     </>
   );

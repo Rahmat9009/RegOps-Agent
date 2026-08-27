@@ -15,9 +15,11 @@ export interface PageHeaderProps {
   crumbs?: Crumb[];
   status?: React.ReactNode;
   actions?: React.ReactNode;
+  /** A short label above the title naming what kind of screen this is. */
+  eyebrow?: string;
 }
 
-export function PageHeader({ title, lede, crumbs, status, actions }: PageHeaderProps) {
+export function PageHeader({ title, lede, crumbs, status, actions, eyebrow }: PageHeaderProps) {
   return (
     <header className="page__head">
       {crumbs && crumbs.length > 0 ? (
@@ -38,6 +40,8 @@ export function PageHeader({ title, lede, crumbs, status, actions }: PageHeaderP
           </ol>
         </nav>
       ) : null}
+
+      {eyebrow && !crumbs ? <span className="eyebrow">{eyebrow}</span> : null}
 
       <div className="page__title-row">
         <h1>{title}</h1>

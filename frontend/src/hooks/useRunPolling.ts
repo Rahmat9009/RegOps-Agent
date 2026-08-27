@@ -4,11 +4,15 @@
 // The hook records no history of its own: `Run.transitions` is the authoritative,
 // server-recorded, oldest-to-newest history, so every screen reads it from the
 // polled run rather than from anything this client observed.
+//
+// Each successful response is also published to `RunPresenceContext` so the
+// application shell can show the live run without polling a second time.
 
 import { useCallback, useEffect, useState } from "react";
 
 import { api, toRegOpsApiError, type RegOpsApiError, type Run } from "@/lib/api";
 import { shouldPoll } from "@/lib/presentation";
+import { useRunPresence } from "@/hooks/useRunPresence";
 
 export const POLL_INTERVAL_MS = 2000;
 
@@ -26,13 +30,15 @@ export function useRunPolling(runId: string | null): RunPolling {
   const [error, setError] = useState<RegOpsApiError | null>(null);
   const [loading, setLoading] = useState(runId !== null);
   const [nonce, setNonce] = useState(0);
+  const { publish } = useRunPresence();
 
   // A new run id starts from a clean slate.
   useEffect(() => {
     setRun(null);
     setError(null);
     setLoading(runId !== null);
-  }, [runId]);
+    publish(null);
+  }, [runId, publish]);
 
   useEffect(() => {
     if (!runId) return;
@@ -47,6 +53,7 @@ export function useRunPolling(runId: string | null): RunPolling {
 
         setRun(next);
         setError(null);
+        publish(next);
 
         if (shouldPoll(next.state)) {
           timer = setTimeout(() => void tick(), POLL_INTERVAL_MS);
@@ -70,7 +77,7 @@ export function useRunPolling(runId: string | null): RunPolling {
       cancelled = true;
       if (timer) clearTimeout(timer);
     };
-  }, [runId, nonce]);
+  }, [runId, nonce, publish]);
 
   const refresh = useCallback(() => setNonce((value) => value + 1), []);
 

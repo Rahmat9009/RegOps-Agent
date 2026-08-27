@@ -3,6 +3,9 @@
 // Current run, pipeline state and progress, documents processed, findings by
 // severity, pending approvals, completed actions, and recovery/failure status.
 // Everything comes from `GET /api/v1/runs/{run_id}`, polled every two seconds.
+//
+// Every figure on this screen is read straight off that one response. Nothing is
+// aggregated from a second request and nothing is estimated.
 
 import { Link } from "react-router-dom";
 import {
@@ -38,6 +41,10 @@ import { PipelineMap } from "@/components/PipelineMap";
 import { ProgressMeter, Stat } from "@/components/Meter";
 import { EmptyState, ErrorState, LoadingState } from "@/components/states";
 
+/** What this console is for, in the words a reviewer would use. */
+const MISSION =
+  "RegOps reads a regulation, finds where it collides with the documents already in force, and holds every consequential change for a human decision. Nothing is written until someone approves it.";
+
 export function DashboardPage() {
   const runId = getActiveRunId();
   const { run, error, loading, polling, refresh } = useRunPolling(runId);
@@ -45,9 +52,13 @@ export function DashboardPage() {
   if (!runId) {
     return (
       <>
-        <PageHeader
-          title="Operations dashboard"
-          lede="Current run status across the RegOps pipeline."
+        <Hero
+          action={
+            <Link className="btn btn--primary btn--lg" to="/intake">
+              <Upload size={17} aria-hidden="true" />
+              Start a synthetic run
+            </Link>
+          }
         />
         <Panel title="Current run" icon={Radar}>
           <EmptyState
@@ -56,7 +67,7 @@ export function DashboardPage() {
             action={
               <Link className="btn btn--primary" to="/intake">
                 <Upload size={16} aria-hidden="true" />
-                Start a regulation intake
+                Go to regulation intake
               </Link>
             }
           >
@@ -70,7 +81,7 @@ export function DashboardPage() {
   if (loading && !run) {
     return (
       <>
-        <PageHeader title="Operations dashboard" />
+        <PageHeader title="Operations dashboard" eyebrow="Operations" />
         <Panel title="Current run" icon={Radar}>
           <LoadingState label="Loading current run…" />
         </Panel>
@@ -84,7 +95,7 @@ export function DashboardPage() {
     if (error.kind === "not_found") clearActiveRunId();
     return (
       <>
-        <PageHeader title="Operations dashboard" />
+        <PageHeader title="Operations dashboard" eyebrow="Operations" />
         <Panel title="Current run" icon={Radar}>
           <ErrorState error={error} onRetry={refresh} />
         </Panel>
@@ -95,6 +106,20 @@ export function DashboardPage() {
   if (!run) return null;
 
   return <DashboardContent run={run} polling={polling} onRefresh={refresh} />;
+}
+
+/** The mission statement. Shown at full height only when there is no run yet. */
+function Hero({ action, compact = false }: { action?: React.ReactNode; compact?: boolean }) {
+  return (
+    <section className="hero" aria-labelledby="mission">
+      <span className="hero__eyebrow">Regulatory change operations</span>
+      <h1 className="hero__title" id="mission">
+        {compact ? "Operations dashboard" : "From citation to decision, on the record."}
+      </h1>
+      <p className="hero__lede">{MISSION}</p>
+      {action ? <div className="hero__actions">{action}</div> : null}
+    </section>
+  );
 }
 
 function DashboardContent({
@@ -114,22 +139,19 @@ function DashboardContent({
 
   return (
     <>
-      <PageHeader
-        title="Operations dashboard"
-        lede={descriptor.description}
-        status={
-          <StatusBadge
-            descriptor={descriptor}
-            srPrefix="Run state:"
-            size="lg"
-            animateIcon={descriptor.active === true}
-          />
-        }
-        actions={
-          <button type="button" className="btn btn--sm" onClick={onRefresh}>
-            <RefreshCw size={14} aria-hidden="true" />
-            Refresh
-          </button>
+      <Hero
+        compact
+        action={
+          <>
+            <Link className="btn btn--primary" to={`/runs/${run.run_id}`}>
+              <Radar size={16} aria-hidden="true" />
+              Open run detail
+            </Link>
+            <Link className="btn" to="/intake">
+              <Upload size={16} aria-hidden="true" />
+              Start a synthetic run
+            </Link>
+          </>
         }
       />
 
@@ -155,121 +177,71 @@ function DashboardContent({
         </Notice>
       ) : null}
 
-      <Panel
-        title="Current run"
-        icon={Radar}
-        description={`${run.regulation.title} · ${run.regulation.reg_id}`}
-        actions={
-          <>
-            <Link className="btn btn--sm" to={`/runs/${run.run_id}`}>
-              Run detail
-            </Link>
-            <Link className="btn btn--sm" to={`/runs/${run.run_id}/findings`}>
-              Findings
-            </Link>
-          </>
-        }
-      >
-        <div className="stack">
-          <dl className="dl">
-            <dt>Run</dt>
-            <dd>
-              <Mono>{run.run_id}</Mono>
-            </dd>
-            <dt>Source file</dt>
-            <dd>
-              <Mono>{run.regulation.source_filename}</Mono>
-            </dd>
-            <dt>Started</dt>
-            <dd>{formatDateTime(run.created_at)}</dd>
-            <dt>Last update</dt>
-            <dd>
-              {formatDateTime(run.updated_at)}
-              {polling ? " · polling every 2 s" : " · polling stopped"}
-            </dd>
-          </dl>
+      <ActiveRunCard run={run} polling={polling} onRefresh={onRefresh} pending={pending.length} />
 
-          <PipelineMap current={run.state} />
-
-          <ProgressMeter
-            label="Documents processed"
-            percent={run.progress.percent}
-            detail={`${formatCount(run.progress.documents_processed)} of ${formatCount(
-              run.progress.documents_total,
-            )} · ${formatPercent(run.progress.percent)}`}
-            tone={run.state === "COMPLETED" ? "verified" : "info"}
+      <section aria-label="Operational metrics">
+        <div className="grid grid--3">
+          <Stat
+            index={0}
+            label="High severity"
+            value={formatCount(severities.high)}
+            tone="critical"
+            icon={<AlertTriangle size={13} aria-hidden="true" />}
+            note="Priority for review"
           />
-
-          {run.progress.partitions_total && run.progress.partitions_total > 0 ? (
-            <ProgressMeter
-              label="Partitions complete"
-              percent={
-                ((run.progress.partitions_complete ?? 0) / run.progress.partitions_total) * 100
-              }
-              detail={`${formatCount(run.progress.partitions_complete ?? 0)} of ${formatCount(
-                run.progress.partitions_total,
-              )}`}
-              tone={run.state === "FAILED_RECOVERABLE" ? "review" : "info"}
-            />
-          ) : null}
+          <Stat
+            index={1}
+            label="Medium severity"
+            value={formatCount(severities.medium)}
+            tone="review"
+            icon={<ShieldQuestion size={13} aria-hidden="true" />}
+            note="Warrants review"
+          />
+          <Stat
+            index={2}
+            label="Low severity"
+            value={formatCount(severities.low)}
+            icon={<CircleDashed size={13} aria-hidden="true" />}
+            note="Minor impact"
+          />
+          <Stat
+            index={3}
+            label="Findings detected"
+            value={formatCount(totalFindings)}
+            icon={<FileStack size={13} aria-hidden="true" />}
+            note="Across the synthetic corpus"
+          />
+          <Stat
+            index={4}
+            label="Awaiting decision"
+            value={formatCount(pending.length)}
+            tone={pending.length > 0 ? "review" : "neutral"}
+            icon={<UserCheck size={13} aria-hidden="true" />}
+            note={pending.length > 0 ? "Paused for a human" : "Nothing paused"}
+          />
+          <Stat
+            index={5}
+            label="Actions completed"
+            value={formatCount(completed.length)}
+            tone={completed.length > 0 ? "verified" : "neutral"}
+            icon={<FileCheck2 size={13} aria-hidden="true" />}
+            note="Executed or stored as a draft"
+          />
         </div>
-      </Panel>
-
-      <Panel
-        title="Findings by severity"
-        icon={ListFilter}
-        description="Operational severity assigned during verification."
-        actions={
-          <Link className="btn btn--sm" to={`/runs/${run.run_id}/findings`}>
-            Open findings
-          </Link>
-        }
-      >
-        {totalFindings === 0 ? (
-          <EmptyState icon={CircleDashed} title="No findings yet">
-            Findings appear once the mapping stage has produced candidates and verification has
-            run.
-          </EmptyState>
-        ) : (
-          <div className="grid grid--4">
-            <Stat
-              label="High"
-              value={formatCount(severities.high)}
-              tone="critical"
-              icon={<AlertTriangle size={14} aria-hidden="true" />}
-              note="Priority for review"
-            />
-            <Stat
-              label="Medium"
-              value={formatCount(severities.medium)}
-              tone="review"
-              icon={<ShieldQuestion size={14} aria-hidden="true" />}
-              note="Warrants review"
-            />
-            <Stat
-              label="Low"
-              value={formatCount(severities.low)}
-              icon={<CircleDashed size={14} aria-hidden="true" />}
-              note="Minor impact"
-            />
-            <Stat
-              label="Total"
-              value={formatCount(totalFindings)}
-              icon={<FileStack size={14} aria-hidden="true" />}
-              note="All detected findings"
-            />
-          </div>
-        )}
-      </Panel>
+      </section>
 
       <div className="grid grid--2">
-        <Panel title="Pending approvals" icon={UserCheck}>
+        <Panel
+          title="Pending approvals"
+          icon={UserCheck}
+          tone={pending.length > 0 ? "review" : undefined}
+        >
           {pending.length === 0 ? (
             <EmptyState icon={CircleDashed} title="Nothing waiting on a decision">
               Consequential actions pause here for a human. None are pending right now.
             </EmptyState>
           ) : (
-            <ul className="stack stack--tight" style={{ listStyle: "none" }}>
+            <ul className="stack stack--tight list-plain">
               {pending.map((approval) => (
                 <li key={approval.approval_id}>
                   <Link
@@ -277,11 +249,10 @@ function DashboardContent({
                     to={`/approvals/${approval.approval_id}?run=${run.run_id}`}
                   >
                     <span className="stack stack--tight">
-                      <strong>
-                        <Mono>{approval.approval_id}</Mono>
-                      </strong>
+                      <strong>Review proposed action</strong>
                       <span className="field__hint">
-                        Action <Mono>{approval.action_id}</Mono>
+                        <Mono>{approval.approval_id}</Mono> · action{" "}
+                        <Mono>{approval.action_id}</Mono>
                       </span>
                     </span>
                     <StatusBadge
@@ -302,20 +273,16 @@ function DashboardContent({
               as drafts against a shadow copy.
             </EmptyState>
           ) : (
-            <ul className="stack stack--tight" style={{ listStyle: "none" }}>
+            <ul className="stack stack--tight list-plain">
               {completed.map((action) => (
                 <li key={action.action_id} className="filecard">
                   <span className="filecard__meta stack stack--tight">
                     <span className="filecard__name">{ACTION_TYPE[action.type].label}</span>
                     <span className="filecard__size">
-                      <Mono>{action.action_id}</Mono> · finding{" "}
-                      <Mono>{action.finding_id}</Mono>
+                      <Mono>{action.action_id}</Mono> · finding <Mono>{action.finding_id}</Mono>
                     </span>
                   </span>
-                  <StatusBadge
-                    descriptor={ACTION_STATUS[action.status]}
-                    srPrefix="Action status:"
-                  />
+                  <StatusBadge descriptor={ACTION_STATUS[action.status]} srPrefix="Action status:" />
                 </li>
               ))}
             </ul>
@@ -324,7 +291,7 @@ function DashboardContent({
       </div>
 
       {run.state === "COMPLETED" ? (
-        <Panel title="Audit" icon={Gauge}>
+        <Panel title="Audit" icon={Gauge} tone="verified">
           <div className="row">
             <p className="page__lede">
               This run is complete. The audit report records executed actions, idempotency results,
@@ -338,6 +305,99 @@ function DashboardContent({
         </Panel>
       ) : null}
     </>
+  );
+}
+
+/** The opening shot: what is running, how far it has got, and what to do next. */
+function ActiveRunCard({
+  run,
+  polling,
+  onRefresh,
+  pending,
+}: {
+  run: Run;
+  polling: boolean;
+  onRefresh: () => void;
+  pending: number;
+}) {
+  const descriptor = RUN_STATE[run.state];
+  const partitionsTotal = run.progress.partitions_total ?? 0;
+
+  return (
+    <section className="runcard" aria-labelledby="active-run">
+      <div className="runcard__head">
+        <div className="runcard__ident">
+          <span className="eyebrow" id="active-run">
+            Active run
+          </span>
+          <h2 className="runcard__title">{run.regulation.title}</h2>
+          <p className="runcard__meta">
+            <span>{run.run_id}</span>
+            <span aria-hidden="true">·</span>
+            <span>{run.regulation.reg_id}</span>
+            <span aria-hidden="true">·</span>
+            <span>{run.regulation.source_filename}</span>
+          </p>
+        </div>
+        <div className="runcard__status">
+          <StatusBadge
+            descriptor={descriptor}
+            srPrefix="Run state:"
+            size="lg"
+            animateIcon={descriptor.active === true}
+          />
+          <span className="field__hint">
+            Updated {formatDateTime(run.updated_at)}
+            {polling ? " · polling every 2 s" : " · polling stopped"}
+          </span>
+        </div>
+      </div>
+
+      <div className="runcard__rail">
+        <PipelineMap current={run.state} />
+      </div>
+
+      <ProgressMeter
+        label="Documents processed"
+        percent={run.progress.percent}
+        detail={`${formatCount(run.progress.documents_processed)} of ${formatCount(
+          run.progress.documents_total,
+        )} · ${formatPercent(run.progress.percent)}`}
+        tone={run.state === "COMPLETED" ? "verified" : "info"}
+      />
+
+      {partitionsTotal > 0 ? (
+        <ProgressMeter
+          label="Partitions complete"
+          percent={((run.progress.partitions_complete ?? 0) / partitionsTotal) * 100}
+          detail={`${formatCount(run.progress.partitions_complete ?? 0)} of ${formatCount(
+            partitionsTotal,
+          )}`}
+          tone={run.state === "FAILED_RECOVERABLE" ? "review" : "info"}
+        />
+      ) : null}
+
+      <div className="runcard__foot">
+        {pending > 0 ? (
+          <Link className="btn btn--primary" to={`/runs/${run.run_id}`}>
+            <UserCheck size={16} aria-hidden="true" />
+            {pluralize(pending, "decision")} waiting
+          </Link>
+        ) : null}
+        <Link className="btn" to={`/runs/${run.run_id}`}>
+          <Radar size={15} aria-hidden="true" />
+          Run detail
+        </Link>
+        <Link className="btn" to={`/runs/${run.run_id}/findings`}>
+          <ListFilter size={15} aria-hidden="true" />
+          Findings
+        </Link>
+        <button type="button" className="btn btn--sm" onClick={onRefresh}>
+          <RefreshCw size={14} aria-hidden="true" />
+          Refresh
+        </button>
+      </div>
+    </section>
   );
 }
 

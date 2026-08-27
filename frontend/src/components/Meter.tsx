@@ -1,5 +1,8 @@
-// Meter.tsx — Progress and score bars. Each carries its numeric value as text and
-// exposes proper ARIA progressbar semantics; the bar itself is decoration.
+// Meter.tsx — Progress bars, score bars and metric tiles.
+//
+// Each carries its numeric value as text and exposes proper ARIA progressbar
+// semantics; the bar itself is decoration that makes a column of numbers
+// scannable. Nothing here is readable by colour alone.
 
 import { motion, useReducedMotion } from "framer-motion";
 
@@ -45,7 +48,7 @@ export function ProgressMeter({ label, percent, detail, tone = "info" }: Progres
           className={["meter__fill", FILL_CLASS[tone] ?? ""].filter(Boolean).join(" ")}
           initial={false}
           animate={{ width: `${clamped}%` }}
-          transition={reduceMotion ? { duration: 0 } : { duration: 0.45, ease: "easeOut" }}
+          transition={reduceMotion ? { duration: 0 } : { duration: 0.4, ease: [0.2, 0, 0, 1] }}
         />
       </div>
     </div>
@@ -87,32 +90,79 @@ export function ScoreMeter({ label, value, description, tone = "info" }: ScoreMe
   );
 }
 
+export interface ScoreBarProps {
+  /** Accessible name for the score, e.g. "Evidence strength". */
+  label: string;
+  /** 0..1 */
+  value: number;
+  /** Bars above this read as adequate; below it they are marked for review. */
+  threshold?: number;
+}
+
+/**
+ * The compact score used inside dense table cells. The percentage leads and is
+ * the authoritative reading; the bar only lets a reader scan a column quickly.
+ */
+export function ScoreBar({ label, value, threshold = 0.7 }: ScoreBarProps) {
+  const percent = Math.max(0, Math.min(1, value)) * 100;
+  const low = value < threshold;
+
+  return (
+    <span className="score">
+      <span className="score__value">{formatRatio(value)}</span>
+      <span
+        className="score__track"
+        role="progressbar"
+        aria-valuenow={Math.round(percent)}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-label={`${label}: ${formatRatio(value)}`}
+      >
+        <span
+          className={low ? "score__fill score__fill--review" : "score__fill"}
+          style={{ width: `${percent}%` }}
+        />
+      </span>
+    </span>
+  );
+}
+
 export interface StatProps {
   label: string;
   value: string;
   note?: string;
   tone?: Tone;
   icon?: React.ReactNode;
+  /** Position in its group, used only for a short entrance stagger. */
+  index?: number;
 }
 
-export function Stat({ label, value, note, tone = "neutral", icon }: StatProps) {
-  const toneClass =
-    tone === "critical"
-      ? "stat--critical"
-      : tone === "review"
-        ? "stat--review"
-        : tone === "verified"
-          ? "stat--verified"
-          : "";
+const TONE_STAT: Partial<Record<Tone, string>> = {
+  info: "stat--info",
+  critical: "stat--critical",
+  review: "stat--review",
+  verified: "stat--verified",
+};
+
+export function Stat({ label, value, note, tone = "neutral", icon, index = 0 }: StatProps) {
+  const reduceMotion = useReducedMotion();
+  // A short stagger over a small group reads as the metrics landing together.
+  // Anything past the sixth tile appears with the sixth.
+  const delay = reduceMotion ? 0 : Math.min(index, 5) * 0.04;
 
   return (
-    <div className={["stat", toneClass].filter(Boolean).join(" ")}>
+    <motion.div
+      className={["stat", TONE_STAT[tone] ?? ""].filter(Boolean).join(" ")}
+      initial={reduceMotion ? false : { opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.24, ease: [0.2, 0, 0, 1], delay }}
+    >
       <span className="stat__label">
         {icon}
         {label}
       </span>
       <span className="stat__value">{value}</span>
       {note ? <span className="stat__note">{note}</span> : null}
-    </div>
+    </motion.div>
   );
 }
