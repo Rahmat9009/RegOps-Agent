@@ -1,0 +1,1432 @@
+{
+  "schema_version": "regops-evaluation-v1",
+  "synthetic": true,
+  "disclaimer": "Synthetic only; not legal advice. Expectations are test data, not measured evaluation results.",
+  "source_document_id": "REG-2026-0417",
+  "effective_date": "2026-10-01",
+  "obligations": [
+    {
+      "evaluation_id": "OBL-0001",
+      "statement": "Licensed recruitment agencies must not charge migrant workers placement fees."
+    },
+    {
+      "evaluation_id": "OBL-0002",
+      "statement": "Licensed recruitment agencies must reissue the published fee schedule within 30 days after issue."
+    },
+    {
+      "evaluation_id": "OBL-0003",
+      "statement": "Employer-paid medical examination costs remain permissible when no cost is transferred to the worker."
+    }
+  ],
+  "findings": [
+    {
+      "evaluation_id": "FND-0001",
+      "obligation_evaluation_id": "OBL-0001",
+      "target_id": "CNT-0001",
+      "target_clause": "7.2",
+      "affected_case_id": "CASE-0142",
+      "relationship": "conflicts_with",
+      "severity": "high",
+      "verdict": "survived",
+      "human_review_required": true,
+      "evidence": [
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "No licensed recruitment agency shall charge a migrant worker any placement fee; permissible costs are limited to those defined in §4(b)."
+        },
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "The provisions in Part II take effect on 1 October 2026."
+        },
+        {
+          "doc_id": "CNT-0001",
+          "doc_kind": "contract",
+          "source_sha256": "55da65f79bcac120ee9bc6136cd8f03ecf98a7b5bb9b61b2990ed728da0b6ff7",
+          "page": 1,
+          "quote": "Clause 7.2: The synthetic worker must pay a placement fee of BDT 11000."
+        },
+        {
+          "doc_id": "CASE-0142",
+          "doc_kind": "case",
+          "source_sha256": "f4e9a35c2cf1624d33ae7f9639e1209e57f5e57fe2e1325c768cd87acc69bee0",
+          "page": 1,
+          "quote": "Synthetic deployment file CASE-0142 records a worker-paid placement fee under CNT-0001 clause 7.2."
+        }
+      ],
+      "evidence_strength": 0.95,
+      "interpretation_confidence": 0.9,
+      "expected_action": {
+        "type": "draft_amendment",
+        "autonomy": "approval_required",
+        "shadow_only": true,
+        "approved_status": "APPROVED_DRAFT"
+      }
+    },
+    {
+      "evaluation_id": "FND-0002",
+      "obligation_evaluation_id": "OBL-0001",
+      "target_id": "CNT-0002",
+      "target_clause": "7.2",
+      "affected_case_id": null,
+      "relationship": "conflicts_with",
+      "severity": "high",
+      "verdict": "survived",
+      "human_review_required": true,
+      "evidence": [
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "No licensed recruitment agency shall charge a migrant worker any placement fee; permissible costs are limited to those defined in §4(b)."
+        },
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "The provisions in Part II take effect on 1 October 2026."
+        },
+        {
+          "doc_id": "CNT-0002",
+          "doc_kind": "contract",
+          "source_sha256": "8e37d2092db055b251e6b8daeed79df88c33e4e7918bc71eb52838a157eab815",
+          "page": 1,
+          "quote": "Clause 7.2: The synthetic worker must pay a placement fee of BDT 12000."
+        }
+      ],
+      "evidence_strength": 0.95,
+      "interpretation_confidence": 0.9
+    },
+    {
+      "evaluation_id": "FND-0003",
+      "obligation_evaluation_id": "OBL-0001",
+      "target_id": "CNT-0003",
+      "target_clause": "7.2",
+      "affected_case_id": null,
+      "relationship": "conflicts_with",
+      "severity": "high",
+      "verdict": "survived",
+      "human_review_required": true,
+      "evidence": [
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "No licensed recruitment agency shall charge a migrant worker any placement fee; permissible costs are limited to those defined in §4(b)."
+        },
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "The provisions in Part II take effect on 1 October 2026."
+        },
+        {
+          "doc_id": "CNT-0003",
+          "doc_kind": "contract",
+          "source_sha256": "35dbbc37b8a4a2d8fe20b76eb2a1ba00e6622ebb178aeb0bbc0f11005398c56d",
+          "page": 1,
+          "quote": "Clause 7.2: The synthetic worker must pay a placement fee of BDT 13000."
+        }
+      ],
+      "evidence_strength": 0.95,
+      "interpretation_confidence": 0.9
+    },
+    {
+      "evaluation_id": "FND-0004",
+      "obligation_evaluation_id": "OBL-0001",
+      "target_id": "CNT-0004",
+      "target_clause": "7.2",
+      "affected_case_id": null,
+      "relationship": "conflicts_with",
+      "severity": "high",
+      "verdict": "survived",
+      "human_review_required": true,
+      "evidence": [
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "No licensed recruitment agency shall charge a migrant worker any placement fee; permissible costs are limited to those defined in §4(b)."
+        },
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "The provisions in Part II take effect on 1 October 2026."
+        },
+        {
+          "doc_id": "CNT-0004",
+          "doc_kind": "contract",
+          "source_sha256": "9b36700ce4fee6040379864dde0994ed6fa2cc2f4de998fb92c5dddc1a74006f",
+          "page": 1,
+          "quote": "Clause 7.2: The synthetic worker must pay a placement fee of BDT 14000."
+        }
+      ],
+      "evidence_strength": 0.95,
+      "interpretation_confidence": 0.9
+    },
+    {
+      "evaluation_id": "FND-0005",
+      "obligation_evaluation_id": "OBL-0001",
+      "target_id": "CNT-0005",
+      "target_clause": "7.2",
+      "affected_case_id": null,
+      "relationship": "conflicts_with",
+      "severity": "high",
+      "verdict": "survived",
+      "human_review_required": true,
+      "evidence": [
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "No licensed recruitment agency shall charge a migrant worker any placement fee; permissible costs are limited to those defined in §4(b)."
+        },
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "The provisions in Part II take effect on 1 October 2026."
+        },
+        {
+          "doc_id": "CNT-0005",
+          "doc_kind": "contract",
+          "source_sha256": "38e99af0db01d0fc51b1c74494660d3b05923b15e0d5e102a59d38557eeb54ac",
+          "page": 1,
+          "quote": "Clause 7.2: The synthetic worker must pay a placement fee of BDT 15000."
+        }
+      ],
+      "evidence_strength": 0.95,
+      "interpretation_confidence": 0.9
+    },
+    {
+      "evaluation_id": "FND-0006",
+      "obligation_evaluation_id": "OBL-0001",
+      "target_id": "CNT-0006",
+      "target_clause": "7.2",
+      "affected_case_id": null,
+      "relationship": "conflicts_with",
+      "severity": "high",
+      "verdict": "survived",
+      "human_review_required": true,
+      "evidence": [
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "No licensed recruitment agency shall charge a migrant worker any placement fee; permissible costs are limited to those defined in §4(b)."
+        },
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "The provisions in Part II take effect on 1 October 2026."
+        },
+        {
+          "doc_id": "CNT-0006",
+          "doc_kind": "contract",
+          "source_sha256": "bb0a56ac7f9f2710c71cf1c71b0be6e653205e4a7b2b68f0f1f6bd0b79b37d66",
+          "page": 1,
+          "quote": "Clause 7.2: The synthetic worker must pay a placement fee of BDT 16000."
+        }
+      ],
+      "evidence_strength": 0.95,
+      "interpretation_confidence": 0.9
+    },
+    {
+      "evaluation_id": "FND-0007",
+      "obligation_evaluation_id": "OBL-0002",
+      "target_id": "POL-0007",
+      "target_clause": null,
+      "affected_case_id": null,
+      "relationship": "requires_update",
+      "severity": "medium",
+      "verdict": "survived",
+      "human_review_required": false,
+      "evidence": [
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "Each licensed recruitment agency must reissue its published fee schedule within 30 days after this amendment is issued. The reissued schedule must identify the BDT 0 worker-paid placement fee limit and distinguish employer-paid costs."
+        },
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "The provisions in Part II take effect on 1 October 2026."
+        },
+        {
+          "doc_id": "POL-0007",
+          "doc_kind": "policy",
+          "source_sha256": "04eb84c2c9cb0c425db7505f36c887004634f614bad7a3c7bc0f275f207d0eb6",
+          "page": 1,
+          "quote": "The synthetic published fee schedule is reviewed annually and still lists the prior worker-paid placement fee."
+        }
+      ],
+      "evidence_strength": 0.95,
+      "interpretation_confidence": 0.9
+    },
+    {
+      "evaluation_id": "FND-0008",
+      "obligation_evaluation_id": "OBL-0002",
+      "target_id": "POL-0008",
+      "target_clause": null,
+      "affected_case_id": null,
+      "relationship": "requires_update",
+      "severity": "medium",
+      "verdict": "survived",
+      "human_review_required": false,
+      "evidence": [
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "Each licensed recruitment agency must reissue its published fee schedule within 30 days after this amendment is issued. The reissued schedule must identify the BDT 0 worker-paid placement fee limit and distinguish employer-paid costs."
+        },
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "The provisions in Part II take effect on 1 October 2026."
+        },
+        {
+          "doc_id": "POL-0008",
+          "doc_kind": "policy",
+          "source_sha256": "d49ccb25653631e303c0678da248539d03db69ef8c5fe5c065f16da9d3bc2014",
+          "page": 1,
+          "quote": "The synthetic published fee schedule is reviewed annually and still lists the prior worker-paid placement fee."
+        }
+      ],
+      "evidence_strength": 0.95,
+      "interpretation_confidence": 0.9
+    },
+    {
+      "evaluation_id": "FND-0009",
+      "obligation_evaluation_id": "OBL-0002",
+      "target_id": "POL-0009",
+      "target_clause": null,
+      "affected_case_id": null,
+      "relationship": "requires_update",
+      "severity": "medium",
+      "verdict": "survived",
+      "human_review_required": false,
+      "evidence": [
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "Each licensed recruitment agency must reissue its published fee schedule within 30 days after this amendment is issued. The reissued schedule must identify the BDT 0 worker-paid placement fee limit and distinguish employer-paid costs."
+        },
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "The provisions in Part II take effect on 1 October 2026."
+        },
+        {
+          "doc_id": "POL-0009",
+          "doc_kind": "policy",
+          "source_sha256": "89adf266cd0c468f1cacfd191a1d4341b66d6aa01054299ef0b1b0d9c88e34ed",
+          "page": 1,
+          "quote": "The synthetic published fee schedule is reviewed annually and still lists the prior worker-paid placement fee."
+        }
+      ],
+      "evidence_strength": 0.95,
+      "interpretation_confidence": 0.9
+    },
+    {
+      "evaluation_id": "FND-0010",
+      "obligation_evaluation_id": "OBL-0002",
+      "target_id": "POL-0010",
+      "target_clause": null,
+      "affected_case_id": null,
+      "relationship": "requires_update",
+      "severity": "medium",
+      "verdict": "survived",
+      "human_review_required": false,
+      "evidence": [
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "Each licensed recruitment agency must reissue its published fee schedule within 30 days after this amendment is issued. The reissued schedule must identify the BDT 0 worker-paid placement fee limit and distinguish employer-paid costs."
+        },
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "The provisions in Part II take effect on 1 October 2026."
+        },
+        {
+          "doc_id": "POL-0010",
+          "doc_kind": "policy",
+          "source_sha256": "ea3c350cac1edc0b6477e24a448d1cd3b985cb7b29f2dcc7ebb38fab837fafdf",
+          "page": 1,
+          "quote": "The synthetic published fee schedule is reviewed annually and still lists the prior worker-paid placement fee."
+        }
+      ],
+      "evidence_strength": 0.95,
+      "interpretation_confidence": 0.9
+    },
+    {
+      "evaluation_id": "FND-0011",
+      "obligation_evaluation_id": "OBL-0002",
+      "target_id": "POL-0011",
+      "target_clause": null,
+      "affected_case_id": null,
+      "relationship": "requires_update",
+      "severity": "medium",
+      "verdict": "survived",
+      "human_review_required": false,
+      "evidence": [
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "Each licensed recruitment agency must reissue its published fee schedule within 30 days after this amendment is issued. The reissued schedule must identify the BDT 0 worker-paid placement fee limit and distinguish employer-paid costs."
+        },
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "The provisions in Part II take effect on 1 October 2026."
+        },
+        {
+          "doc_id": "POL-0011",
+          "doc_kind": "policy",
+          "source_sha256": "0370cd01e495606f169c49e527f4f3b784b3c3249c61600cddc3f59eae9bfa6c",
+          "page": 1,
+          "quote": "The synthetic published fee schedule is reviewed annually and still lists the prior worker-paid placement fee."
+        }
+      ],
+      "evidence_strength": 0.95,
+      "interpretation_confidence": 0.9
+    },
+    {
+      "evaluation_id": "FND-0012",
+      "obligation_evaluation_id": "OBL-0002",
+      "target_id": "POL-0012",
+      "target_clause": null,
+      "affected_case_id": null,
+      "relationship": "requires_update",
+      "severity": "medium",
+      "verdict": "survived",
+      "human_review_required": false,
+      "evidence": [
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "Each licensed recruitment agency must reissue its published fee schedule within 30 days after this amendment is issued. The reissued schedule must identify the BDT 0 worker-paid placement fee limit and distinguish employer-paid costs."
+        },
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "The provisions in Part II take effect on 1 October 2026."
+        },
+        {
+          "doc_id": "POL-0012",
+          "doc_kind": "policy",
+          "source_sha256": "8ea9cbb8c3cf86ab2652a79a2f46211e5dbffaa7e5e86e29bc402fb2102b074c",
+          "page": 1,
+          "quote": "The synthetic published fee schedule is reviewed annually and still lists the prior worker-paid placement fee."
+        }
+      ],
+      "evidence_strength": 0.95,
+      "interpretation_confidence": 0.9
+    },
+    {
+      "evaluation_id": "FND-0013",
+      "obligation_evaluation_id": "OBL-0002",
+      "target_id": "POL-0013",
+      "target_clause": null,
+      "affected_case_id": null,
+      "relationship": "requires_update",
+      "severity": "medium",
+      "verdict": "survived",
+      "human_review_required": false,
+      "evidence": [
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "Each licensed recruitment agency must reissue its published fee schedule within 30 days after this amendment is issued. The reissued schedule must identify the BDT 0 worker-paid placement fee limit and distinguish employer-paid costs."
+        },
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "The provisions in Part II take effect on 1 October 2026."
+        },
+        {
+          "doc_id": "POL-0013",
+          "doc_kind": "policy",
+          "source_sha256": "8e571772d00267ec25fac6039243fe4401743ce0262962330953ca653caa8c42",
+          "page": 1,
+          "quote": "The synthetic published fee schedule is reviewed annually and still lists the prior worker-paid placement fee."
+        }
+      ],
+      "evidence_strength": 0.95,
+      "interpretation_confidence": 0.9
+    },
+    {
+      "evaluation_id": "FND-0014",
+      "obligation_evaluation_id": "OBL-0002",
+      "target_id": "POL-0014",
+      "target_clause": null,
+      "affected_case_id": null,
+      "relationship": "requires_update",
+      "severity": "medium",
+      "verdict": "survived",
+      "human_review_required": false,
+      "evidence": [
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "Each licensed recruitment agency must reissue its published fee schedule within 30 days after this amendment is issued. The reissued schedule must identify the BDT 0 worker-paid placement fee limit and distinguish employer-paid costs."
+        },
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "The provisions in Part II take effect on 1 October 2026."
+        },
+        {
+          "doc_id": "POL-0014",
+          "doc_kind": "policy",
+          "source_sha256": "498c1fa3b9097732f2192e74235a7a8e363d4c49bbf85cba514eacb59a0b9e21",
+          "page": 1,
+          "quote": "The synthetic published fee schedule is reviewed annually and still lists the prior worker-paid placement fee."
+        }
+      ],
+      "evidence_strength": 0.95,
+      "interpretation_confidence": 0.9
+    },
+    {
+      "evaluation_id": "FND-0015",
+      "obligation_evaluation_id": "OBL-0002",
+      "target_id": "POL-0015",
+      "target_clause": null,
+      "affected_case_id": null,
+      "relationship": "requires_update",
+      "severity": "medium",
+      "verdict": "survived",
+      "human_review_required": false,
+      "evidence": [
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "Each licensed recruitment agency must reissue its published fee schedule within 30 days after this amendment is issued. The reissued schedule must identify the BDT 0 worker-paid placement fee limit and distinguish employer-paid costs."
+        },
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "The provisions in Part II take effect on 1 October 2026."
+        },
+        {
+          "doc_id": "POL-0015",
+          "doc_kind": "policy",
+          "source_sha256": "16485e41b1bb4a3500ea4752fa8c3ae1646b8834419324b334fbcdf2f152df2e",
+          "page": 1,
+          "quote": "The synthetic published fee schedule is reviewed annually and still lists the prior worker-paid placement fee."
+        }
+      ],
+      "evidence_strength": 0.95,
+      "interpretation_confidence": 0.9
+    },
+    {
+      "evaluation_id": "FND-0016",
+      "obligation_evaluation_id": "OBL-0002",
+      "target_id": "POL-0016",
+      "target_clause": null,
+      "affected_case_id": null,
+      "relationship": "requires_update",
+      "severity": "medium",
+      "verdict": "survived",
+      "human_review_required": false,
+      "evidence": [
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "Each licensed recruitment agency must reissue its published fee schedule within 30 days after this amendment is issued. The reissued schedule must identify the BDT 0 worker-paid placement fee limit and distinguish employer-paid costs."
+        },
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "The provisions in Part II take effect on 1 October 2026."
+        },
+        {
+          "doc_id": "POL-0016",
+          "doc_kind": "policy",
+          "source_sha256": "3b2887383254a82ad035a72fa6a0f4706ebf6b206632ce0be65de170d2b5d285",
+          "page": 1,
+          "quote": "The synthetic published fee schedule is reviewed annually and still lists the prior worker-paid placement fee."
+        }
+      ],
+      "evidence_strength": 0.95,
+      "interpretation_confidence": 0.9
+    },
+    {
+      "evaluation_id": "FND-0017",
+      "obligation_evaluation_id": "OBL-0002",
+      "target_id": "POL-0017",
+      "target_clause": null,
+      "affected_case_id": null,
+      "relationship": "requires_update",
+      "severity": "medium",
+      "verdict": "survived",
+      "human_review_required": false,
+      "evidence": [
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "Each licensed recruitment agency must reissue its published fee schedule within 30 days after this amendment is issued. The reissued schedule must identify the BDT 0 worker-paid placement fee limit and distinguish employer-paid costs."
+        },
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "The provisions in Part II take effect on 1 October 2026."
+        },
+        {
+          "doc_id": "POL-0017",
+          "doc_kind": "policy",
+          "source_sha256": "76de5ac0e19001be5daaebc52c9fafd09c9f78ce2d392eaca74056c48b8f1a7f",
+          "page": 1,
+          "quote": "The synthetic published fee schedule is reviewed annually and still lists the prior worker-paid placement fee."
+        }
+      ],
+      "evidence_strength": 0.95,
+      "interpretation_confidence": 0.9
+    },
+    {
+      "evaluation_id": "FND-0018",
+      "obligation_evaluation_id": "OBL-0001",
+      "target_id": "CASE-0218",
+      "target_clause": null,
+      "affected_case_id": null,
+      "relationship": "requires_update",
+      "severity": "low",
+      "verdict": "survived",
+      "human_review_required": false,
+      "evidence": [
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "No licensed recruitment agency shall charge a migrant worker any placement fee; permissible costs are limited to those defined in §4(b)."
+        },
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "The provisions in Part II take effect on 1 October 2026."
+        },
+        {
+          "doc_id": "CASE-0218",
+          "doc_kind": "case",
+          "source_sha256": "7bfd9290d36f3794693649447514d8eaa6c2b287d10ea70e3834c08df438a8ad",
+          "page": 1,
+          "quote": "Synthetic deployment file CASE-0218 records a worker-paid placement fee before 1 October 2026 and requires fee-reconciliation review."
+        }
+      ],
+      "evidence_strength": 0.95,
+      "interpretation_confidence": 0.9
+    },
+    {
+      "evaluation_id": "FND-0019",
+      "obligation_evaluation_id": "OBL-0001",
+      "target_id": "CASE-0219",
+      "target_clause": null,
+      "affected_case_id": null,
+      "relationship": "requires_update",
+      "severity": "low",
+      "verdict": "survived",
+      "human_review_required": false,
+      "evidence": [
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "No licensed recruitment agency shall charge a migrant worker any placement fee; permissible costs are limited to those defined in §4(b)."
+        },
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "The provisions in Part II take effect on 1 October 2026."
+        },
+        {
+          "doc_id": "CASE-0219",
+          "doc_kind": "case",
+          "source_sha256": "28f0d28da5a07e31a9008e9c0acffd26d988b94154a223687cd589d2d4cae4df",
+          "page": 1,
+          "quote": "Synthetic deployment file CASE-0219 records a worker-paid placement fee before 1 October 2026 and requires fee-reconciliation review."
+        }
+      ],
+      "evidence_strength": 0.95,
+      "interpretation_confidence": 0.9
+    },
+    {
+      "evaluation_id": "FND-0020",
+      "obligation_evaluation_id": "OBL-0001",
+      "target_id": "CASE-0220",
+      "target_clause": null,
+      "affected_case_id": null,
+      "relationship": "requires_update",
+      "severity": "low",
+      "verdict": "survived",
+      "human_review_required": false,
+      "evidence": [
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "No licensed recruitment agency shall charge a migrant worker any placement fee; permissible costs are limited to those defined in §4(b)."
+        },
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "The provisions in Part II take effect on 1 October 2026."
+        },
+        {
+          "doc_id": "CASE-0220",
+          "doc_kind": "case",
+          "source_sha256": "c79c21895da9d24fe87aba04ac74182f07d6a581466162b0d29e0cdb45184592",
+          "page": 1,
+          "quote": "Synthetic deployment file CASE-0220 records a worker-paid placement fee before 1 October 2026 and requires fee-reconciliation review."
+        }
+      ],
+      "evidence_strength": 0.95,
+      "interpretation_confidence": 0.9
+    },
+    {
+      "evaluation_id": "FND-0021",
+      "obligation_evaluation_id": "OBL-0001",
+      "target_id": "CASE-0221",
+      "target_clause": null,
+      "affected_case_id": null,
+      "relationship": "requires_update",
+      "severity": "low",
+      "verdict": "survived",
+      "human_review_required": false,
+      "evidence": [
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "No licensed recruitment agency shall charge a migrant worker any placement fee; permissible costs are limited to those defined in §4(b)."
+        },
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "The provisions in Part II take effect on 1 October 2026."
+        },
+        {
+          "doc_id": "CASE-0221",
+          "doc_kind": "case",
+          "source_sha256": "6a459797f5a1c1ff5584948626ed94377aa8ee7850a804abb3bcaa942bb802a0",
+          "page": 1,
+          "quote": "Synthetic deployment file CASE-0221 records a worker-paid placement fee before 1 October 2026 and requires fee-reconciliation review."
+        }
+      ],
+      "evidence_strength": 0.95,
+      "interpretation_confidence": 0.9
+    },
+    {
+      "evaluation_id": "FND-0022",
+      "obligation_evaluation_id": "OBL-0001",
+      "target_id": "CASE-0222",
+      "target_clause": null,
+      "affected_case_id": null,
+      "relationship": "requires_update",
+      "severity": "low",
+      "verdict": "survived",
+      "human_review_required": false,
+      "evidence": [
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "No licensed recruitment agency shall charge a migrant worker any placement fee; permissible costs are limited to those defined in §4(b)."
+        },
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "The provisions in Part II take effect on 1 October 2026."
+        },
+        {
+          "doc_id": "CASE-0222",
+          "doc_kind": "case",
+          "source_sha256": "9b70da502dcbb3c814097f216ffe484d22d92acc088cf1678d21608a7adca715",
+          "page": 1,
+          "quote": "Synthetic deployment file CASE-0222 records a worker-paid placement fee before 1 October 2026 and requires fee-reconciliation review."
+        }
+      ],
+      "evidence_strength": 0.95,
+      "interpretation_confidence": 0.9
+    },
+    {
+      "evaluation_id": "FND-0023",
+      "obligation_evaluation_id": "OBL-0001",
+      "target_id": "CASE-0223",
+      "target_clause": null,
+      "affected_case_id": null,
+      "relationship": "requires_update",
+      "severity": "low",
+      "verdict": "survived",
+      "human_review_required": false,
+      "evidence": [
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "No licensed recruitment agency shall charge a migrant worker any placement fee; permissible costs are limited to those defined in §4(b)."
+        },
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "The provisions in Part II take effect on 1 October 2026."
+        },
+        {
+          "doc_id": "CASE-0223",
+          "doc_kind": "case",
+          "source_sha256": "8aa526c269ba22f17808fc425068560d838c94749b2a2f1293e95bdd900c4135",
+          "page": 1,
+          "quote": "Synthetic deployment file CASE-0223 records a worker-paid placement fee before 1 October 2026 and requires fee-reconciliation review."
+        }
+      ],
+      "evidence_strength": 0.95,
+      "interpretation_confidence": 0.9
+    },
+    {
+      "evaluation_id": "FND-0024",
+      "obligation_evaluation_id": "OBL-0001",
+      "target_id": "CASE-0224",
+      "target_clause": null,
+      "affected_case_id": null,
+      "relationship": "requires_update",
+      "severity": "low",
+      "verdict": "survived",
+      "human_review_required": false,
+      "evidence": [
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "No licensed recruitment agency shall charge a migrant worker any placement fee; permissible costs are limited to those defined in §4(b)."
+        },
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "The provisions in Part II take effect on 1 October 2026."
+        },
+        {
+          "doc_id": "CASE-0224",
+          "doc_kind": "case",
+          "source_sha256": "0c3234530ad8c64dad8bba885e5b6aa181916fa7527b7d006d33b344fc5b5389",
+          "page": 1,
+          "quote": "Synthetic deployment file CASE-0224 records a worker-paid placement fee before 1 October 2026 and requires fee-reconciliation review."
+        }
+      ],
+      "evidence_strength": 0.95,
+      "interpretation_confidence": 0.9
+    },
+    {
+      "evaluation_id": "FND-0025",
+      "obligation_evaluation_id": "OBL-0001",
+      "target_id": "CASE-0225",
+      "target_clause": null,
+      "affected_case_id": null,
+      "relationship": "requires_update",
+      "severity": "low",
+      "verdict": "survived",
+      "human_review_required": false,
+      "evidence": [
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "No licensed recruitment agency shall charge a migrant worker any placement fee; permissible costs are limited to those defined in §4(b)."
+        },
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "The provisions in Part II take effect on 1 October 2026."
+        },
+        {
+          "doc_id": "CASE-0225",
+          "doc_kind": "case",
+          "source_sha256": "250a7e9f020b234ff419a45e05d414cf3ec23e665e22f9e2d909fac5d5d77d12",
+          "page": 1,
+          "quote": "Synthetic deployment file CASE-0225 records a worker-paid placement fee before 1 October 2026 and requires fee-reconciliation review."
+        }
+      ],
+      "evidence_strength": 0.95,
+      "interpretation_confidence": 0.9
+    },
+    {
+      "evaluation_id": "FND-0026",
+      "obligation_evaluation_id": "OBL-0001",
+      "target_id": "CASE-0226",
+      "target_clause": null,
+      "affected_case_id": null,
+      "relationship": "requires_update",
+      "severity": "low",
+      "verdict": "survived",
+      "human_review_required": false,
+      "evidence": [
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "No licensed recruitment agency shall charge a migrant worker any placement fee; permissible costs are limited to those defined in §4(b)."
+        },
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "The provisions in Part II take effect on 1 October 2026."
+        },
+        {
+          "doc_id": "CASE-0226",
+          "doc_kind": "case",
+          "source_sha256": "8f1ee4a755bd28952a4a2fc8a44d1f45e19c60afa260c2d96f6f6c736666e23f",
+          "page": 1,
+          "quote": "Synthetic deployment file CASE-0226 records a worker-paid placement fee before 1 October 2026 and requires fee-reconciliation review."
+        }
+      ],
+      "evidence_strength": 0.95,
+      "interpretation_confidence": 0.9
+    },
+    {
+      "evaluation_id": "FND-0027",
+      "obligation_evaluation_id": "OBL-0001",
+      "target_id": "CASE-0227",
+      "target_clause": null,
+      "affected_case_id": null,
+      "relationship": "requires_update",
+      "severity": "low",
+      "verdict": "survived",
+      "human_review_required": false,
+      "evidence": [
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "No licensed recruitment agency shall charge a migrant worker any placement fee; permissible costs are limited to those defined in §4(b)."
+        },
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "The provisions in Part II take effect on 1 October 2026."
+        },
+        {
+          "doc_id": "CASE-0227",
+          "doc_kind": "case",
+          "source_sha256": "59fc404bf3428393a8121ee84ff2a886c0a51bfea23aa99f0d2843b671603707",
+          "page": 1,
+          "quote": "Synthetic deployment file CASE-0227 records a worker-paid placement fee before 1 October 2026 and requires fee-reconciliation review."
+        }
+      ],
+      "evidence_strength": 0.95,
+      "interpretation_confidence": 0.9
+    },
+    {
+      "evaluation_id": "FND-0028",
+      "obligation_evaluation_id": "OBL-0001",
+      "target_id": "CASE-0228",
+      "target_clause": null,
+      "affected_case_id": null,
+      "relationship": "requires_update",
+      "severity": "low",
+      "verdict": "survived",
+      "human_review_required": false,
+      "evidence": [
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "No licensed recruitment agency shall charge a migrant worker any placement fee; permissible costs are limited to those defined in §4(b)."
+        },
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "The provisions in Part II take effect on 1 October 2026."
+        },
+        {
+          "doc_id": "CASE-0228",
+          "doc_kind": "case",
+          "source_sha256": "b07f13736156870c2f1cbb2dbf52e2bcf867a5b19bf78dbea03b0663f5c747f4",
+          "page": 1,
+          "quote": "Synthetic deployment file CASE-0228 records a worker-paid placement fee before 1 October 2026 and requires fee-reconciliation review."
+        }
+      ],
+      "evidence_strength": 0.95,
+      "interpretation_confidence": 0.9
+    },
+    {
+      "evaluation_id": "FND-0029",
+      "obligation_evaluation_id": "OBL-0001",
+      "target_id": "CASE-0229",
+      "target_clause": null,
+      "affected_case_id": null,
+      "relationship": "requires_update",
+      "severity": "low",
+      "verdict": "survived",
+      "human_review_required": false,
+      "evidence": [
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "No licensed recruitment agency shall charge a migrant worker any placement fee; permissible costs are limited to those defined in §4(b)."
+        },
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "The provisions in Part II take effect on 1 October 2026."
+        },
+        {
+          "doc_id": "CASE-0229",
+          "doc_kind": "case",
+          "source_sha256": "6532d98c433fa15ab815e898c9831eaeefbe52e5abd53b8542bd37b216ff7d0e",
+          "page": 1,
+          "quote": "Synthetic deployment file CASE-0229 records a worker-paid placement fee before 1 October 2026 and requires fee-reconciliation review."
+        }
+      ],
+      "evidence_strength": 0.95,
+      "interpretation_confidence": 0.9
+    },
+    {
+      "evaluation_id": "FND-0030",
+      "obligation_evaluation_id": "OBL-0001",
+      "target_id": "CASE-0230",
+      "target_clause": null,
+      "affected_case_id": null,
+      "relationship": "requires_update",
+      "severity": "low",
+      "verdict": "survived",
+      "human_review_required": false,
+      "evidence": [
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "No licensed recruitment agency shall charge a migrant worker any placement fee; permissible costs are limited to those defined in §4(b)."
+        },
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "The provisions in Part II take effect on 1 October 2026."
+        },
+        {
+          "doc_id": "CASE-0230",
+          "doc_kind": "case",
+          "source_sha256": "0e0ef4fc3ca8115b3fc8a4b4e9215a953ee301e15cd646f83b5101a200bbff47",
+          "page": 1,
+          "quote": "Synthetic deployment file CASE-0230 records a worker-paid placement fee before 1 October 2026 and requires fee-reconciliation review."
+        }
+      ],
+      "evidence_strength": 0.95,
+      "interpretation_confidence": 0.9
+    },
+    {
+      "evaluation_id": "FND-0031",
+      "obligation_evaluation_id": "OBL-0001",
+      "target_id": "CASE-0231",
+      "target_clause": null,
+      "affected_case_id": null,
+      "relationship": "requires_update",
+      "severity": "low",
+      "verdict": "survived",
+      "human_review_required": false,
+      "evidence": [
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "No licensed recruitment agency shall charge a migrant worker any placement fee; permissible costs are limited to those defined in §4(b)."
+        },
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "The provisions in Part II take effect on 1 October 2026."
+        },
+        {
+          "doc_id": "CASE-0231",
+          "doc_kind": "case",
+          "source_sha256": "ba1e21f27841fbeb95ab2d1b2bac840097d088cf5a3a13971de251f38eadd96e",
+          "page": 1,
+          "quote": "Synthetic deployment file CASE-0231 records a worker-paid placement fee before 1 October 2026 and requires fee-reconciliation review."
+        }
+      ],
+      "evidence_strength": 0.95,
+      "interpretation_confidence": 0.9
+    },
+    {
+      "evaluation_id": "FND-0032",
+      "obligation_evaluation_id": "OBL-0001",
+      "target_id": "CASE-0232",
+      "target_clause": null,
+      "affected_case_id": null,
+      "relationship": "requires_update",
+      "severity": "low",
+      "verdict": "survived",
+      "human_review_required": false,
+      "evidence": [
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "No licensed recruitment agency shall charge a migrant worker any placement fee; permissible costs are limited to those defined in §4(b)."
+        },
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "The provisions in Part II take effect on 1 October 2026."
+        },
+        {
+          "doc_id": "CASE-0232",
+          "doc_kind": "case",
+          "source_sha256": "df89730aebf85e90bfec0bea4efa7048ac445e717446ad280d99b52eb48c6830",
+          "page": 1,
+          "quote": "Synthetic deployment file CASE-0232 records a worker-paid placement fee before 1 October 2026 and requires fee-reconciliation review."
+        }
+      ],
+      "evidence_strength": 0.95,
+      "interpretation_confidence": 0.9
+    },
+    {
+      "evaluation_id": "FND-0033",
+      "obligation_evaluation_id": "OBL-0001",
+      "target_id": "CASE-0233",
+      "target_clause": null,
+      "affected_case_id": null,
+      "relationship": "requires_update",
+      "severity": "low",
+      "verdict": "survived",
+      "human_review_required": false,
+      "evidence": [
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "No licensed recruitment agency shall charge a migrant worker any placement fee; permissible costs are limited to those defined in §4(b)."
+        },
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "The provisions in Part II take effect on 1 October 2026."
+        },
+        {
+          "doc_id": "CASE-0233",
+          "doc_kind": "case",
+          "source_sha256": "c7afbcbd9827051d07467958cb9682be6230711081b458cd02d854df6fab21a8",
+          "page": 1,
+          "quote": "Synthetic deployment file CASE-0233 records a worker-paid placement fee before 1 October 2026 and requires fee-reconciliation review."
+        }
+      ],
+      "evidence_strength": 0.95,
+      "interpretation_confidence": 0.9
+    },
+    {
+      "evaluation_id": "FND-0034",
+      "obligation_evaluation_id": "OBL-0001",
+      "target_id": "CASE-0234",
+      "target_clause": null,
+      "affected_case_id": null,
+      "relationship": "requires_update",
+      "severity": "low",
+      "verdict": "survived",
+      "human_review_required": false,
+      "evidence": [
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "No licensed recruitment agency shall charge a migrant worker any placement fee; permissible costs are limited to those defined in §4(b)."
+        },
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "The provisions in Part II take effect on 1 October 2026."
+        },
+        {
+          "doc_id": "CASE-0234",
+          "doc_kind": "case",
+          "source_sha256": "1f9f6bd5dbdd058fa5381b79ccee0206f77c096ad6685b42e16565d29dedd189",
+          "page": 1,
+          "quote": "Synthetic deployment file CASE-0234 records a worker-paid placement fee before 1 October 2026 and requires fee-reconciliation review."
+        }
+      ],
+      "evidence_strength": 0.95,
+      "interpretation_confidence": 0.9
+    },
+    {
+      "evaluation_id": "FND-0035",
+      "obligation_evaluation_id": "OBL-0001",
+      "target_id": "CASE-0235",
+      "target_clause": null,
+      "affected_case_id": null,
+      "relationship": "requires_update",
+      "severity": "low",
+      "verdict": "survived",
+      "human_review_required": false,
+      "evidence": [
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "No licensed recruitment agency shall charge a migrant worker any placement fee; permissible costs are limited to those defined in §4(b)."
+        },
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "The provisions in Part II take effect on 1 October 2026."
+        },
+        {
+          "doc_id": "CASE-0235",
+          "doc_kind": "case",
+          "source_sha256": "e1b37ecb966ef9cb9ef05d3522df0cbcd6ab2bab63a0d004097e96392fc12513",
+          "page": 1,
+          "quote": "Synthetic deployment file CASE-0235 records a worker-paid placement fee before 1 October 2026 and requires fee-reconciliation review."
+        }
+      ],
+      "evidence_strength": 0.95,
+      "interpretation_confidence": 0.9
+    },
+    {
+      "evaluation_id": "FND-0036",
+      "obligation_evaluation_id": "OBL-0001",
+      "target_id": "CASE-0236",
+      "target_clause": null,
+      "affected_case_id": null,
+      "relationship": "requires_update",
+      "severity": "low",
+      "verdict": "survived",
+      "human_review_required": false,
+      "evidence": [
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "No licensed recruitment agency shall charge a migrant worker any placement fee; permissible costs are limited to those defined in §4(b)."
+        },
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "The provisions in Part II take effect on 1 October 2026."
+        },
+        {
+          "doc_id": "CASE-0236",
+          "doc_kind": "case",
+          "source_sha256": "f28b4fc89c2fb408d7d7f6409c6c2a91757206a43eb0edcff50e98837109a2ef",
+          "page": 1,
+          "quote": "Synthetic deployment file CASE-0236 records a worker-paid placement fee before 1 October 2026 and requires fee-reconciliation review."
+        }
+      ],
+      "evidence_strength": 0.95,
+      "interpretation_confidence": 0.9
+    },
+    {
+      "evaluation_id": "FND-0037",
+      "obligation_evaluation_id": "OBL-0001",
+      "target_id": "CASE-0237",
+      "target_clause": null,
+      "affected_case_id": null,
+      "relationship": "requires_update",
+      "severity": "low",
+      "verdict": "survived",
+      "human_review_required": false,
+      "evidence": [
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "No licensed recruitment agency shall charge a migrant worker any placement fee; permissible costs are limited to those defined in §4(b)."
+        },
+        {
+          "doc_id": "REG-2026-0417",
+          "doc_kind": "regulation",
+          "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+          "page": 3,
+          "quote": "The provisions in Part II take effect on 1 October 2026."
+        },
+        {
+          "doc_id": "CASE-0237",
+          "doc_kind": "case",
+          "source_sha256": "54a6ca22b6334a32db8346396be2e014b81cdb2dc53df8e709a228c9274f82c2",
+          "page": 1,
+          "quote": "Synthetic deployment file CASE-0237 records a worker-paid placement fee before 1 October 2026 and requires fee-reconciliation review."
+        }
+      ],
+      "evidence_strength": 0.95,
+      "interpretation_confidence": 0.9
+    }
+  ],
+  "expected_totals": {
+    "obligations": 3,
+    "findings": 37,
+    "severity": {
+      "high": 6,
+      "medium": 11,
+      "low": 20
+    }
+  },
+  "counterfactual": {
+    "baseline_finding_count": 37,
+    "predicted_resolved_count": 31,
+    "remaining_count": 6,
+    "new_conflicts_count": 2,
+    "remaining_high_risk_count": 1,
+    "resolved_finding_ids": [
+      "FND-0001",
+      "FND-0002",
+      "FND-0003",
+      "FND-0004",
+      "FND-0005",
+      "FND-0007",
+      "FND-0008",
+      "FND-0009",
+      "FND-0010",
+      "FND-0011",
+      "FND-0012",
+      "FND-0013",
+      "FND-0014",
+      "FND-0015",
+      "FND-0016",
+      "FND-0017",
+      "FND-0018",
+      "FND-0019",
+      "FND-0020",
+      "FND-0021",
+      "FND-0022",
+      "FND-0023",
+      "FND-0024",
+      "FND-0025",
+      "FND-0026",
+      "FND-0027",
+      "FND-0028",
+      "FND-0029",
+      "FND-0030",
+      "FND-0031",
+      "FND-0032"
+    ],
+    "unchanged_finding_ids": [
+      "FND-0006",
+      "FND-0033",
+      "FND-0034",
+      "FND-0035",
+      "FND-0036",
+      "FND-0037"
+    ],
+    "new_conflict_ids": [
+      "FND-0038",
+      "FND-0039"
+    ],
+    "remaining_high_risk_ids": [
+      "FND-0006"
+    ]
+  }
+}

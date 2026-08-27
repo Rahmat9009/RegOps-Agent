@@ -1,0 +1,35 @@
+{
+  "identity": {
+    "doc_id": "REG-2026-0417",
+    "doc_kind": "regulation",
+    "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+    "page_count": 4,
+    "synthetic": true
+  },
+  "pages": [
+    {
+      "doc_id": "REG-2026-0417",
+      "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+      "page": 1,
+      "text": "REG-2026-0417 | Synthetic demonstration document\nPage 1 of 4\nSYNTHETIC REGULATORY NOTICE\nOverseas Recruitment Fee\nAmendment Notice 2026\nA bounded demonstration document prepared solely for testing\nevidence extraction, impact investigation, human approval, recovery,\nand audit behavior in RegOps.\nDocument ID\nREG-2026-0417\nSynthetic issuer\nSynthetic Mobility Standards Authority\nIssue date\n17 April 2026\nEffective date\n1 October 2026\nSupersedes\nSynthetic Fee Schedule Notice 2025\nClassification\nPublic synthetic demonstration data\n IMPORTANT\nThis document is fictional. It is not issued by any\ngovernment, does not describe current law, and must not\nbe used for legal, recruitment, financial, or employment\ndecisions.\nRegOps should treat this file as one source document, preserve its exact bytes, compute a lowercase\nSHA-256 hash, and attach every extracted obligation to a page-level citation.\n"
+    },
+    {
+      "doc_id": "REG-2026-0417",
+      "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+      "page": 2,
+      "text": "SYNTHETIC MOBILITY STANDARDS AUTHORITY\nNOT A REAL REGULATION\nREG-2026-0417 | Synthetic demonstration document\nPage 2 of 4\nPART I\nPurpose, scope and definitions\n§1. Purpose\nThis synthetic notice demonstrates an amendment to a fictional overseas recruitment fee\nframework. It is written to support controlled testing of document understanding, evidence\nverification, operational impact investigation, and human approval workflows.\n§2. Scope\nThe notice applies only to the fictional licensed recruitment agencies, synthetic employment\ncontracts, synthetic policies, and synthetic deployment files included in the RegOps\ndemonstration corpus.\n§3(a). Migrant worker\nA synthetic person represented in the demonstration corpus as seeking or holding an\noverseas employment placement. No real person is represented by this definition.\n§3(b). Placement fee\nAny recruitment service charge, agency commission, placement charge, documentation\nhandling charge, or equivalent amount collected directly or indirectly from a migrant worker\nas a condition of recruitment or deployment.\n§3(c). Employer-paid administrative cost\nA documented cost paid by the employer and not recovered from the worker through wages,\ndeductions, deposits, reimbursements, or a related-party payment.\n§3(d). Shadow amendment\nA proposed contract change applied only to an isolated synthetic copy for preview and\nrevalidation. A shadow amendment does not alter an authoritative source contract.\n Change\n Operational meaning\nWorker-paid placement fee\nSynthetic limit changes to BDT 0\nPublished fee schedule\nReissue within 30 days\nMedical examination\nPermitted only when employer-paid\nExisting files\nReview before the effective date\n"
+    },
+    {
+      "doc_id": "REG-2026-0417",
+      "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+      "page": 3,
+      "text": "SYNTHETIC MOBILITY STANDARDS AUTHORITY\nNOT A REAL REGULATION\nREG-2026-0417 | Synthetic demonstration document\nPage 3 of 4\nPART II\nOperative fee amendments\n§4(a). Worker-paid placement fees\nNo licensed recruitment agency shall charge a migrant\nworker any placement fee; permissible costs are limited to\nthose defined in §4(b).\nFor this synthetic amendment, the maximum placement fee payable by a migrant worker is\nBDT 0. A fee may not be collected through a wage deduction, deposit, reimbursement,\nrelated-party payment, or another arrangement with the same effect.\n§4(b). Permissible employer-paid costs\nAn employer may pay documented administrative costs and required medical examination\ncosts. The agency must not recover those amounts from the worker directly or indirectly. A\nworker-facing contract must describe the worker's payable amount as BDT 0.\n§5(a). Fee schedule publication\nEach licensed recruitment agency must reissue its published fee schedule within 30 days\nafter this amendment is issued. The reissued schedule must identify the BDT 0 worker-paid\nplacement fee limit and distinguish employer-paid costs.\n§5(b). Internal policy review\nAn annual-review policy is not sufficient by itself. Any internal policy or appendix that retains\nthe prior fee schedule must be marked for update before the effective date.\n§6. Medical examination exception\nEmployer-paid medical examination costs remain permissible under this amended synthetic\nrule when no amount is transferred to, deducted from, or reclaimed from the worker.\n§7. Effective date\nThe provisions in Part II take effect on 1 October 2026.\n"
+    },
+    {
+      "doc_id": "REG-2026-0417",
+      "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+      "page": 4,
+      "text": "SYNTHETIC MOBILITY STANDARDS AUTHORITY\nNOT A REAL REGULATION\nREG-2026-0417 | Synthetic demonstration document\nPage 4 of 4\nPART III\nTransition, records and review\n§8(a). Existing synthetic contracts\nBefore the effective date, an agency must review each active synthetic contract that\nrequires a worker-paid placement fee, recruitment service charge, documentation charge, or\nequivalent payment.\n§8(b). Existing synthetic deployment files\nA deployment file recording a fee collected before the effective date must be queued for\nfee-reconciliation review. This notice does not state that the earlier synthetic payment was\nunlawful and does not authorize an automated refund.\n§9. Controlled amendments\nA proposed amendment to an active synthetic contract must remain a draft until an\nauthorized human reviewer approves or rejects it. Rejection must not execute the draft,\nresolve the underlying finding, or change the source contract.\n§10. Evidence retention\nThe demonstration system should retain the source document identifier, page number,\nexact quoted text, related synthetic record identifier, action outcome, and authoritative run\ntransition needed to explain each finding.\n§11. Duplicate prevention\nA repeated attempt to create or execute the same controlled action for the same run and\nfinding must not create a second action or a second approval decision.\n§12. Non-authoritative model output\nAutomated extraction and impact investigation results are candidates only. They become\nauthoritative demonstration records only after deterministic schema, citation, identity,\nbinding, and policy verification succeeds.\nEND OF SYNTHETIC\n NOTICE\nThis fictional document exists solely for the RegOps\ndemonstration. All agencies, workers, contracts, policies, cases,\nobligations, findings, and decisions connected to it are synthetic.\n"
+    }
+  ]
+}
