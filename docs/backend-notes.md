@@ -107,3 +107,21 @@ FastAPI's event loop. Demo mode is the currently deployable synthetic hackathon
 mode. Production authentication is not implemented; the default global app
 intentionally fails closed in production until a trusted reviewer identity adapter
 is injected.
+
+## 2026-08-27 — Phase 1B.2C ADK Investigator boundary
+
+The frozen OpenAPI contract, its eight paths, and its 13 run states were not
+changed. Phase 1B.2C adds only the internal single-application ADK topology, the
+candidate-only Impact Investigator, a canonical immutable five-record synthetic
+corpus, five exact-ID read-only tools, and an ephemeral deterministic session
+boundary. API wiring, Firestore stage commits, workflow recovery, action policy,
+approval handling, and deployment infrastructure remain unchanged and deferred to
+the later scoped phases.
+
+The Analyst tool registry is empty. The Investigator registry contains only
+`list_contract_summaries`, `get_contract_clause`, `list_case_summaries`,
+`get_case_evidence`, and `get_internal_fee_policy`. Neither registry can reach
+Firestore, repositories, approvals, reviewer identity, ActionPolicy, the Action
+Controller, amendment writing, Workflows, arbitrary network access, web search, or
+code execution. Sessions are invocation-local and hold only digests, backend-owned
+obligation IDs, and the synthetic marker; ADK history is not authoritative.

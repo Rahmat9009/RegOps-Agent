@@ -1,0 +1,15 @@
+{
+  "schema_version": "regops-fixture-provenance-v1",
+  "synthetic": true,
+  "source_pdf": "sample/regops-synthetic-regulation-2026.pdf",
+  "source_pdf_tracked": false,
+  "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
+  "page_text_extraction": "pypdf from bundled Codex artifact runtime; no backend parser dependency",
+  "canonical_quotes": "Exact PDF page-three sentences with layout whitespace joined; punctuation and wording unchanged.",
+  "scorecard_available": false,
+  "benchmark_origin": "User-supplied Phase 1B.2A acceptance totals and FND-0001 binding.",
+  "corpus_origin": "Explicitly authored synthetic expansion for offline verification. These record bodies and per-finding assignments are not extracted from an unavailable scorecard.",
+  "corpus_digest_scheme": "Per-document SHA-256 of UTF-8 page text including synthetic label; runtime snapshot digest uses canonical worker-corpus-v1 serialization.",
+  "counterfactual_origin": "User-supplied expected totals. Local ID partitions are authored fixture expectations, not an executed shadow simulation.",
+  "runtime_identity": "OBL/FND evaluation IDs are local labels only. Tests derive UUIDv5 IDs under a separate run ID."
+}

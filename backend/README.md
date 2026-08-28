@@ -88,5 +88,151 @@ and requires no Google credentials. An optional test marked `firestore_emulator`
 runs only when `FIRESTORE_EMULATOR_HOST` is configured.
 
 Run locally with `.venv\Scripts\regops-api` or build `Dockerfile` for Cloud Run.
-Phase 1 remains a single-process service. The Gemini/ADK analysis worker and cloud
-resource provisioning are deferred. Cloud Run Jobs and Pub/Sub begin in Phase 2.
+Phase 1 remains a single-process service. The Gemini analyst adapter below is not
+wired into API orchestration. ADK and cloud resource provisioning are deferred.
+Cloud Run Jobs and Pub/Sub begin in Phase 2.
+
+## Phase 1B.2B: guarded candidate extraction
+
+This phase adds only local PDF extraction, explicit Model Armor text inspection,
+and a Gemini candidate analyst. It does not implement the investigator, ADK,
+orchestration, persistence, actions, callbacks, Agent Runtime or deployment.
+`CandidateAnalyst.analyze(source=...)` and the frozen HTTP contract are unchanged.
+The analyst returns `AnalystDraftOutput`; only `verify_obligations` creates
+authoritative identifiers and verified obligations. A schema-valid candidate with
+a wrong quotation/page is returned to that verifier and rejected there.
+
+### PDF and model input
+
+`parse_pdf` checks the signature, upload limit and exact SHA-256 before starting
+`pypdf` in a disposable local subprocess. Bytes use stdin, not files, URLs or
+command arguments. The manifest uses one-based pages and is compared in full
+against independent re-extraction before any Model Armor/Gemini call.
+
+| Limit | Default | Configuration |
+| --- | --- | --- |
+| PDF bytes | 10 MiB, or smaller intake limit | `REGOPS_MAX_UPLOAD_BYTES` |
+| Pages | 100 | `REGOPS_PDF_MAX_PAGES`, at most 100 |
+| Extracted characters per page | 20,000 | `REGOPS_PDF_MAX_PAGE_CHARS`, at most 20,000 |
+| Total extracted characters | 200,000 | `REGOPS_PDF_MAX_TOTAL_CHARS`, at most 2,000,000 |
+| Parser lifetime | 10 seconds | `PdfLimits.timeout_seconds`, at most 30 |
+| Decoded streams | 8 MiB each / 32 MiB total | fixed application safety bounds |
+| Object graph visits | 50,000 | fixed application safety bound |
+
+Encrypted, damaged, zero-page, blank/unextractable-page, active-content, image,
+unsupported-filter and ordinary embedded-file PDFs fail closed. No OCR or
+semantic text repair is performed. Only CRLF/CR line endings are normalized;
+case, punctuation, word boundaries and quotation semantics are unchanged.
+The parser is time bounded and has stream/graph/output limits, but is not an
+OS-level memory sandbox. Only synthetic documents are supported.
+
+**Sample compatibility decision:** the checked-in four-page PDF contains a C2PA
+`Content Credentials` associated file. Its explicit provenance FileSpec shape is
+ignored during local extraction; it is never evidence and is not authenticated by
+this adapter. Ordinary attachments remain rejected. To prevent uninspected PDF
+metadata or attachment content from reaching the model, Gemini receives only the
+inspected, page-labelled text, not native PDF bytes or a GCS URI. This deliberately
+narrows the older specification's native-PDF input design and preserves the
+unchanged candidate port. No source bytes, fixture hashes or verification rules
+were changed to accommodate the model.
+
+### Model Armor and Gemini
+
+Two injected `TextInspection` ports guard input and output. The real adapter uses
+the official `google-cloud-modelarmor` client, with separate input and output
+templates. Every page must pass before generation. Each template must report
+successful prompt-injection, sensitive-data and responsible-AI filters; missing,
+unknown, inconsistent, suspicious, skipped or failed results cannot authorize use.
+Only fixed `ArmorOutcome` values leave the adapter; matched text and vendor
+diagnostics are discarded. No sanitized replacement text is substituted.
+
+`google-genai` is configured with `enterprise=True`, explicit project/location,
+ADC, API version `v1`, temperature zero, one candidate, no tools, no automatic
+function calls, no cached corpus and no thought output. `REGOPS_GEMINI_MODEL`
+defaults to `gemini-3.5-flash`. The generation config uses JSON MIME and
+`AnalystDraftOutput.model_json_schema()` with strict additional-field rejection.
+The versioned prompt is packaged in the wheel.
+
+`should_return_http_response=True` prevents the SDK from parsing model JSON before
+inspection. The bounded raw response is inspected first, then its decoded text is
+inspected again before strict JSON/Pydantic parsing. Missing/empty/truncated,
+non-object, duplicate-key, non-finite, schema-invalid, refusal and tool-call outputs
+fail without partial candidates. Default bounds are 8,192 generated tokens,
+32,000 output characters and 128,000 raw response bytes.
+
+`build_demo_analyst` requires `REGOPS_MODE=demo`, `GOOGLE_CLOUD_PROJECT`,
+`REGOPS_REGION`, `REGOPS_ARMOR_INPUT_TEMPLATE` and `REGOPS_ARMOR_OUTPUT_TEMPLATE`.
+Template names must belong to the configured project and region. Call `close()`
+to release factory-owned clients. Tests inject fakes directly. Production remains
+unavailable; missing Armor configuration, raw API keys, alternate SDK endpoints
+and enabled message capture are rejected. Nothing silently falls back to the
+Gemini Developer API or an allow-all inspector.
+
+Failures expose fixed `AnalystCode` strings only. Only timeout, rate-limit and
+transient service/inspection failures retry: at most three attempts per call,
+bounded jitter backoff and `Retry-After` delays capped at four seconds, up to
+90 seconds per Gemini call, 10 seconds per Armor
+inspection, and a shared 210-second stage budget. SDK retries are disabled.
+Blocked content, invalid PDFs, malformed output, rejected requests and verifier
+failures do not retry. This follows the explicit 1B.2B request rather than the
+older specification's malformed-output retry suggestion. Dependency logs are
+suppressed only inside the sensitive call context, including structured fields;
+parser diagnostics never reach application logs.
+
+### Offline and optional live verification
+
+Default tests block network connections, DNS lookup and ADC discovery, permitting
+only the standard library's internal socketpair loopback IPC on Windows. Recordings
+are explicitly authored synthetic fixtures, not claimed live model outputs. They
+check the exact three candidates, page-three citations and byte-identical verified
+results. A real SDK test uses an in-memory HTTP transport and verifies that output
+inspection precedes the SDK's candidate parser.
+
+The `live_gemini` test is skipped unless `REGOPS_LIVE_GEMINI=1` and the project,
+region and both template environment variables are present. ADC must also be
+available. It uses the real input/output Armor adapters and the synthetic PDF,
+and checks structured output and citations, not exact live prose. A skipped test
+does not establish regional model availability, live extraction quality or cloud
+security configuration.
+
+### Reproducing dependency locks (Python 3.12, PowerShell)
+
+Existing pins are retained as resolver constraints. Reports stay in ignored
+`.venv/`; the renderer emits only package names and versions. Both shared and
+direct pins are checked by the default integrity test.
+
+```powershell
+.venv\Scripts\python -m pip install --dry-run --ignore-installed --report .venv/runtime-resolution.json -c requirements-runtime.lock .
+.venv\Scripts\python -m pip install --dry-run --ignore-installed --report .venv/dev-resolution.json -c requirements-dev.lock '.[dev]'
+.venv\Scripts\python scripts\lock_dependencies.py
+.venv\Scripts\python scripts\lock_dependencies.py --check
+.venv\Scripts\python -m pip install -r requirements-dev.lock
+.venv\Scripts\python -m pip install --no-deps -e .
+.venv\Scripts\python -m pip check
+```
+
+API references used for the adapter: [Google Gen AI SDK](https://googleapis.github.io/python-genai/)
+and [Model Armor sanitization result](https://docs.cloud.google.com/model-armor/reference/rest/v1/SanitizationResult).
+
+## Phase 1B.2C: ADK Impact Investigator
+
+This phase adds one ADK application topology with a deterministic sequential root
+and exactly two single-turn components. The Analyst has no model-callable tools;
+the Investigator has exactly five package-bound, read-only functions over the
+immutable synthetic corpus. Neither component receives persistence, approval,
+action, amendment, generic query, network, search, or code-execution capability.
+
+The checked-in five-record corpus is strict, frozen, visibly synthetic, and bound
+to canonical manifest and per-record SHA-256 digests. Tool calls accept only exact
+contract/clause/case/policy IDs and return bounded JSON copies with exact evidence
+anchors. Unknown IDs fail closed without echoing the input.
+
+Investigation is one-shot. Its session ID is derived from the run ID, canonical
+obligation-set digest, corpus digest, model, instruction version, and tool-schema
+version. A fresh `InMemorySessionService` is used per call; session state contains
+only digests, backend obligation IDs, and `synthetic: true`. Candidate output is
+independently parsed into strict `InvestigatorDraftOutput`; it cannot carry action,
+approval, amendment, status, authoritative run, or finding fields.
+
+The application is not wired into API intake or lifecycle state. Persistent stage
+commits, orchestration, recovery, and action handoff remain Phase 1B.2D.
