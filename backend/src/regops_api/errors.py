@@ -23,6 +23,7 @@ from regops_api.runtime_errors import (
 )
 from regops_api.schemas import APIError, ErrorDetail
 from regops_api.state_machine import InvalidRunTransitionError
+from regops_api.worker_runtime import WorkerExecutionError
 
 
 class APIException(Exception):
@@ -121,7 +122,11 @@ def register_exception_handlers(app: FastAPI) -> None:
             APIError(code="UNSUPPORTED_DOCUMENT", message="A valid PDF is required"),
         )
 
-    unavailable_types = (IntegrationUnavailableError, RuntimeConfigurationError)
+    unavailable_types = (
+        IntegrationUnavailableError,
+        RuntimeConfigurationError,
+        WorkerExecutionError,
+    )
 
     async def handle_unavailable(_request: Request, _exc: Exception) -> JSONResponse:
         return _error_response(

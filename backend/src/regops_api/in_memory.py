@@ -22,6 +22,8 @@ from regops_api.domain_models import (
     ShadowContractSnapshot,
     SourceDocumentRecord,
     SyntheticContract,
+    VerifiedWorkerHandoffCommit,
+    WorkerHandoffRecord,
 )
 from regops_api.repositories import (
     DuplicateRecordError,
@@ -78,6 +80,7 @@ class InMemoryRepositories:
         self._checkpoints: dict[str, list[RunCheckpoint]] = {}
         self._case_tags: dict[str, list[CaseTag]] = {}
         self._pending_approval_slots: dict[str, PendingApprovalSlot] = {}
+        self._worker_handoffs: dict[str, WorkerHandoffRecord] = {}
 
     @classmethod
     def for_tests(cls) -> InMemoryRepositories:
@@ -101,9 +104,7 @@ class InMemoryRepositories:
 
     def add_regulation(self, record: RegulationRecord) -> None:
         with self._lock:
-            self._insert_unique(
-                self._regulations, record.regulation.reg_id, record
-            )
+            self._insert_unique(self._regulations, record.regulation.reg_id, record)
 
     def add_source_document(self, record: SourceDocumentRecord) -> None:
         with self._lock:
@@ -187,9 +188,7 @@ class InMemoryRepositories:
         with self._lock:
             for finding in findings:
                 if finding.finding_id in self._findings:
-                    raise DuplicateRecordError(
-                        f"finding {finding.finding_id!r} already exists"
-                    )
+                    raise DuplicateRecordError(f"finding {finding.finding_id!r} already exists")
             for finding in findings:
                 self._findings[finding.finding_id] = deepcopy(finding)
 
@@ -330,10 +329,94 @@ class InMemoryRepositories:
                 raise DuplicateRecordError("run intake metadata already exists")
             self._runs[commit.run.run_id] = deepcopy(commit.run)
             self._regulations[regulation_id] = deepcopy(commit.regulation)
-            self._source_documents[commit.source_document.run_id] = deepcopy(
-                commit.source_document
-            )
+            self._source_documents[commit.source_document.run_id] = deepcopy(commit.source_document)
             self._checkpoints[commit.run.run_id] = [deepcopy(commit.checkpoint)]
+
+    def get_worker_handoff(self, run_id: str) -> WorkerHandoffRecord:
+        return self._get(self._worker_handoffs, run_id, "worker handoff")
+
+    def commit_verified_worker_handoff(self, commit: VerifiedWorkerHandoffCommit) -> bool:
+        """Commit the verified result and sole pending draft as one lock boundary.
+
+        Returns true only for a coherent duplicate delivery.
+        """
+        with self._lock:
+            existing_handoff = self._worker_handoffs.get(commit.run.run_id)
+            if existing_handoff is not None:
+                if existing_handoff != commit.handoff:
+                    raise StaleRecordError("worker output conflicts with committed handoff")
+                self._validate_existing_worker_handoff(commit)
+                return True
+            run_id = commit.run.run_id
+            current = self._get(self._runs, run_id, "run")
+            source = self._get(self._source_documents, run_id, "source document")
+            checkpoints = self._checkpoints.get(run_id, [])
+            if not checkpoints:
+                raise StaleRecordError("worker handoff checkpoint is missing")
+            if current.state is not RunState.MAPPED or source != commit.expected_source:
+                raise StaleRecordError("worker handoff base binding changed")
+            if (
+                self._obligations.get(run_id)
+                or any(item.run_id == run_id for item in self._findings.values())
+                or any(item.run_id == run_id for item in self._actions.values())
+                or any(item.run_id == run_id for item in self._approvals.values())
+                or run_id in self._pending_approval_slots
+            ):
+                raise StaleRecordError("partial worker handoff state exists")
+            previous = checkpoints[-1]
+            try:
+                validate_authoritative_run_update(
+                    current=current,
+                    updated=commit.run,
+                    previous_checkpoint=previous,
+                    checkpoints=commit.checkpoints,
+                    audit_events=commit.audit_events,
+                )
+            except InvalidRunTransitionError as error:
+                raise StaleRecordError("worker transition binding changed") from error
+            contract = self._contracts.get(commit.contract.contract_id)
+            if contract is not None and contract != commit.contract:
+                raise StaleRecordError("synthetic target conflicts with fixture")
+            proposal = commit.action.action
+            if (
+                proposal.action_id in self._actions
+                or proposal.idempotency_key in self._action_keys
+                or commit.approval.approval_id in self._approvals
+                or commit.finding.finding_id in self._findings
+            ):
+                raise StaleRecordError("partial worker identifiers already exist")
+            self._obligations[run_id] = deepcopy(commit.obligations)
+            self._contracts[commit.contract.contract_id] = deepcopy(commit.contract)
+            self._findings[commit.finding.finding_id] = deepcopy(commit.finding)
+            self._actions[proposal.action_id] = deepcopy(commit.action)
+            self._action_keys[proposal.idempotency_key] = proposal.action_id
+            self._approvals[commit.approval.approval_id] = deepcopy(commit.approval)
+            self._pending_approval_slots[run_id] = deepcopy(commit.pending_slot)
+            self._runs[run_id] = deepcopy(commit.run)
+            checkpoints.extend(deepcopy(commit.checkpoints))
+            self._events.setdefault(run_id, []).extend(deepcopy(commit.audit_events))
+            self._worker_handoffs[run_id] = deepcopy(commit.handoff)
+            return False
+
+    def _validate_existing_worker_handoff(self, commit: VerifiedWorkerHandoffCommit) -> None:
+        run_id = commit.run.run_id
+        run = self._get(self._runs, run_id, "run")
+        source = self._get(self._source_documents, run_id, "source document")
+        action = self._actions.get(commit.handoff.action_id)
+        approval = self._approvals.get(commit.handoff.approval_id)
+        finding = self._findings.get(commit.handoff.finding_id)
+        slot = self._pending_approval_slots.get(run_id)
+        if (
+            source != commit.expected_source
+            or run.state is not RunState.AWAITING_APPROVAL
+            or action != commit.action
+            or approval != commit.approval
+            or finding != commit.finding
+            or slot != commit.pending_slot
+            or self._obligations.get(run_id) != commit.obligations
+            or run.pending_approvals != [commit.approval]
+        ):
+            raise StaleRecordError("committed worker handoff is not coherent")
 
     def create_approval_required_action(
         self, commit: ApprovalRequiredActionCommit
@@ -341,9 +424,7 @@ class InMemoryRepositories:
         with self._lock:
             proposed = commit.action.action
             current_run = self._get(self._runs, commit.action.run_id, "run")
-            current_finding = self._get(
-                self._findings, proposed.finding_id, "finding"
-            )
+            current_finding = self._get(self._findings, proposed.finding_id, "finding")
             pending = sorted(
                 (
                     approval
@@ -369,16 +450,13 @@ class InMemoryRepositories:
                     or approval.run_id != existing.run_id
                     or approval.status is not ApprovalStatus.PENDING
                     or slot != commit.pending_slot
-                    or [item.approval_id for item in pending]
-                    != [approval.approval_id]
+                    or [item.approval_id for item in pending] != [approval.approval_id]
                     or current_finding.run_id != existing.run_id
                     or current_finding.status is not FindingStatus.AWAITING_APPROVAL
                     or current_finding.proposed_action != existing.action
                     or current_run.state in {RunState.COMPLETED, RunState.FAILED}
                 ):
-                    raise StaleRecordError(
-                        "idempotency claim is not bound to a coherent approval"
-                    )
+                    raise StaleRecordError("idempotency claim is not bound to a coherent approval")
                 self._events.setdefault(existing.run_id, []).extend(
                     deepcopy([commit.action_attempt_event, commit.duplicate_event])
                 )
@@ -393,9 +471,7 @@ class InMemoryRepositories:
             ):
                 raise DuplicateRecordError("approval-required action identifier exists")
             if pending or commit.action.run_id in self._pending_approval_slots:
-                raise DuplicateRecordError(
-                    "run already has a pending draft-amendment approval"
-                )
+                raise DuplicateRecordError("run already has a pending draft-amendment approval")
             if (
                 current_finding != commit.expected_finding
                 or current_finding.run_id != commit.action.run_id
@@ -407,13 +483,9 @@ class InMemoryRepositories:
             self._action_keys[proposed.idempotency_key] = proposed.action_id
             self._approvals[commit.approval.approval_id] = deepcopy(commit.approval)
             self._findings[commit.finding.finding_id] = deepcopy(commit.finding)
-            self._pending_approval_slots[commit.action.run_id] = deepcopy(
-                commit.pending_slot
-            )
+            self._pending_approval_slots[commit.action.run_id] = deepcopy(commit.pending_slot)
             self._events.setdefault(commit.action.run_id, []).extend(
-                deepcopy(
-                    [commit.action_attempt_event, commit.first_execution_event]
-                )
+                deepcopy([commit.action_attempt_event, commit.first_execution_event])
             )
             return ActionAttemptResult(
                 action=deepcopy(proposed),
@@ -436,8 +508,7 @@ class InMemoryRepositories:
             if run.state is RunState.COMPLETED and (
                 run.run_id in self._pending_approval_slots
                 or any(
-                    approval.run_id == run.run_id
-                    and approval.status is ApprovalStatus.PENDING
+                    approval.run_id == run.run_id and approval.status is ApprovalStatus.PENDING
                     for approval in self._approvals.values()
                 )
             ):
@@ -462,15 +533,9 @@ class InMemoryRepositories:
 
     def commit_approval_decision(self, commit: ApprovalDecisionCommit) -> None:
         with self._lock:
-            current_approval = self._get(
-                self._approvals, commit.approval.approval_id, "approval"
-            )
-            current_action = self._get(
-                self._actions, commit.action.action.action_id, "action"
-            )
-            current_finding = self._get(
-                self._findings, commit.finding.finding_id, "finding"
-            )
+            current_approval = self._get(self._approvals, commit.approval.approval_id, "approval")
+            current_action = self._get(self._actions, commit.action.action.action_id, "action")
+            current_finding = self._get(self._findings, commit.finding.finding_id, "finding")
             current_run = self._get(self._runs, commit.run.run_id, "run")
             current_slot = self._pending_approval_slots.get(commit.run.run_id)
             pending_ids = sorted(
@@ -526,9 +591,7 @@ class InMemoryRepositories:
                 amendment = current_action.amendment
                 if amendment is None:
                     raise StaleRecordError("approved action has no bound amendment")
-                source = self._get(
-                    self._contracts, amendment.contract_id, "synthetic contract"
-                )
+                source = self._get(self._contracts, amendment.contract_id, "synthetic contract")
                 if (
                     commit.snapshot.run_id != current_action.run_id
                     or commit.snapshot.action_id != current_action.action.action_id
@@ -546,23 +609,15 @@ class InMemoryRepositories:
             self._runs[commit.run.run_id] = deepcopy(commit.run)
             del self._pending_approval_slots[commit.run.run_id]
             for checkpoint in commit.checkpoints:
-                self._checkpoints.setdefault(checkpoint.run_id, []).append(
-                    deepcopy(checkpoint)
-                )
-            self._events.setdefault(commit.run.run_id, []).extend(
-                deepcopy(commit.audit_events)
-            )
+                self._checkpoints.setdefault(checkpoint.run_id, []).append(deepcopy(checkpoint))
+            self._events.setdefault(commit.run.run_id, []).extend(deepcopy(commit.audit_events))
 
-    def _insert_unique(
-        self, collection: dict[str, RecordT], key: str, value: RecordT
-    ) -> None:
+    def _insert_unique(self, collection: dict[str, RecordT], key: str, value: RecordT) -> None:
         if key in collection:
             raise DuplicateRecordError(f"record {key!r} already exists")
         collection[key] = deepcopy(value)
 
-    def _get(
-        self, collection: dict[str, RecordT], key: str, label: str
-    ) -> RecordT:
+    def _get(self, collection: dict[str, RecordT], key: str, label: str) -> RecordT:
         with self._lock:
             self._require(collection, key, label)
             return deepcopy(collection[key])

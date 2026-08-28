@@ -1,5 +1,58 @@
 # Backend contract notes
 
+## 2026-08-28 — minimum live worker slice (no contract change)
+
+The frozen public contract remains unchanged: exactly eight `/api/v1` paths and 13
+run states. `POST /internal/v1/workflow/run` and `GET /internal/v1/readiness` are
+private routes excluded from generated OpenAPI.
+
+The slice connects persistent synthetic PDF intake to Workflow OIDC, exact-object
+Cloud Storage reading, bounded parsing, Model Armor-guarded Gemini extraction,
+unchanged deterministic obligation/finding verification, and an atomic handoff to
+`AWAITING_APPROVAL`. A package runtime fixture is bound only to SHA-256
+`6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9`. It maps one
+verified prohibition to one synthetic placement-fee contract conflict. The mapping
+is backend-owned synthetic policy, not Gemini or ADK output. The ADK investigator
+remains implemented/tested but is not invoked. The 37-finding evaluation fixtures
+are unchanged.
+
+The handoff transaction stores verified obligations, one finding, the immutable
+synthetic source contract, deterministic draft amendment/action claim, pending
+Approval and run guard, audit events, worker claim, checkpoints, and final transition
+suffix together. Coherent duplicate delivery returns the stored result; partial or
+conflicting state returns a sanitized conflict. Preview and approval touch only a
+shadow copy. Approval remains an `APPROVED_DRAFT`; rejection executes nothing.
+
+Required demo variables are `REGOPS_MODE=demo`, `GOOGLE_CLOUD_PROJECT`,
+`REGOPS_BUCKET`, `REGOPS_WORKFLOW`, `REGOPS_WORKFLOW_REGION`,
+`REGOPS_ARMOR_LOCATION`, `REGOPS_GEMINI_LOCATION`, `REGOPS_GEMINI_MODEL`
+(`gemini-3.5-flash`), `REGOPS_ARMOR_INPUT_TEMPLATE`,
+`REGOPS_ARMOR_OUTPUT_TEMPLATE`, `REGOPS_WORKFLOW_SERVICE_ACCOUNT`,
+`REGOPS_WORKER_AUDIENCE`, `REGOPS_AUDIT_SIGNER_SERVICE_ACCOUNT`, and exact HTTPS
+`REGOPS_CORS_ORIGINS`. `REGOPS_REGION` is only a temporary location fallback. CORS
+is not authentication.
+
+IAM/deployment remain external blockers: the Workflow caller needs Cloud Run invoke;
+the service identity needs exact-object Storage, Firestore, Vertex AI, Model Armor,
+Workflow execution, and IAM Credentials `signBlob` permissions. Resources and model
+regional availability must already exist. No cloud resources were changed and no
+live-cloud verification is claimed.
+
+Exact local verification from `backend/`:
+
+```powershell
+.venv\Scripts\python.exe -m pytest -q
+.venv\Scripts\python.exe -m ruff check .
+.venv\Scripts\python.exe -m mypy --no-incremental
+.venv\Scripts\openapi-spec-validator.exe ..\contracts\openapi.yaml
+.venv\Scripts\python.exe scripts\compare_openapi.py
+.venv\Scripts\python.exe scripts\lock_dependencies.py --check
+.venv\Scripts\python.exe -m pip check
+.venv\Scripts\python.exe -m pip wheel --no-deps --no-build-isolation --wheel-dir .venv\wheel-check .
+docker build -t regops-api:minimum-live .
+git diff --check
+```
+
 ## 2026-08-16 — deliberate Phase 0 contract repair
 
 `contracts/openapi.yaml` was upgraded from OpenAPI 3.0.3 to 3.1.0 while retaining

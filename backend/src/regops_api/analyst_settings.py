@@ -63,13 +63,15 @@ class AnalystSettings(WorkerModel):
         if (
             runtime.mode is not RuntimeMode.DEMO
             or not runtime.project_id
-            or not runtime.region
+            or not runtime.armor_location
+            or not runtime.gemini_location
             or not re.fullmatch(r"[a-z][a-z0-9-]{2,62}", runtime.project_id)
-            or not re.fullmatch(r"[a-z][a-z0-9-]{1,62}", runtime.region)
+            or not re.fullmatch(r"[a-z][a-z0-9-]{1,62}", runtime.armor_location)
+            or not re.fullmatch(r"[a-z][a-z0-9-]{1,62}", runtime.gemini_location)
             or self.pdf.max_bytes > runtime.max_upload_bytes
         ):
             raise AnalystError(AnalystCode.ANALYST_CONFIGURATION_INVALID)
-        prefix = f"projects/{runtime.project_id}/locations/{runtime.region}/templates/"
+        prefix = f"projects/{runtime.project_id}/locations/{runtime.armor_location}/templates/"
         for template in (self.armor_input_template, self.armor_output_template):
             if not template or not re.fullmatch(re.escape(prefix) + r"[A-Za-z0-9_-]+", template):
                 raise AnalystError(AnalystCode.ANALYST_CONFIGURATION_INVALID)

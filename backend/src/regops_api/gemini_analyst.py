@@ -342,7 +342,7 @@ def build_demo_analyst(
                 gemini = genai.Client(
                     enterprise=True,
                     project=runtime.project_id,
-                    location=runtime.region,
+                    location=runtime.gemini_location,
                     http_options=types.HttpOptions(
                         api_version="v1",
                         timeout=90_000,
@@ -352,7 +352,7 @@ def build_demo_analyst(
                 clients.callback(gemini.close)
                 armor_client = modelarmor_v1.ModelArmorClient(
                     client_options=ClientOptions(
-                        api_endpoint=f"modelarmor.{runtime.region}.rep.googleapis.com",
+                        api_endpoint=(f"modelarmor.{runtime.armor_location}.rep.googleapis.com"),
                     )
                 )
                 clients.callback(armor_client.transport.close)

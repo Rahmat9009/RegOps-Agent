@@ -18,6 +18,8 @@ from regops_api.domain_models import (
     ShadowContractSnapshot,
     SourceDocumentRecord,
     SyntheticContract,
+    VerifiedWorkerHandoffCommit,
+    WorkerHandoffRecord,
 )
 from regops_api.schemas import (
     ActionAutonomy,
@@ -233,6 +235,13 @@ class RunIntakeAtomicRepository(Protocol):
     def commit_run_intake(self, commit: RunIntakeCommit) -> None: ...
 
 
+@runtime_checkable
+class VerifiedWorkerHandoffAtomicRepository(Protocol):
+    def get_worker_handoff(self, run_id: str) -> WorkerHandoffRecord: ...
+
+    def commit_verified_worker_handoff(self, commit: VerifiedWorkerHandoffCommit) -> bool: ...
+
+
 class RepositoryBundle(
     RunRepository,
     RegulationRepository,
@@ -251,6 +260,7 @@ class RepositoryBundle(
     ApprovalDecisionAtomicRepository,
     ApprovalRequiredActionAtomicRepository,
     RunIntakeAtomicRepository,
+    VerifiedWorkerHandoffAtomicRepository,
     Protocol,
 ):
     """Complete persistence surface required by the Phase 1B runtime."""

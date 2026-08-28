@@ -1,8 +1,14 @@
 from __future__ import annotations
 
+from hashlib import sha256
+
 from regops_api.config import RuntimeMode, RuntimeSettings
 from regops_api.counterfactual import DeterministicCounterfactual
-from regops_api.domain_models import StoredSourceObject, WorkflowLaunchRequest
+from regops_api.domain_models import (
+    SourceDocumentRecord,
+    StoredSourceObject,
+    WorkflowLaunchRequest,
+)
 from regops_api.in_memory import InMemoryRepositories
 from regops_api.integrations import IntegrationUnavailableError
 from regops_api.runtime import RuntimeContainer, StaticReviewerIdentity
@@ -14,9 +20,7 @@ class RecordingStorage:
         self.deleted_sources: list[tuple[str, str]] = []
         self.audit_packages: list[tuple[str, bytes]] = []
 
-    def store_source(
-        self, *, run_id: str, content: bytes, content_type: str
-    ) -> StoredSourceObject:
+    def store_source(self, *, run_id: str, content: bytes, content_type: str) -> StoredSourceObject:
         self.sources.append((run_id, content, content_type))
         object_name = f"runs/{run_id}/source/regulation.pdf"
         return StoredSourceObject(
@@ -29,6 +33,19 @@ class RecordingStorage:
         if object_name != expected:
             raise ValueError("unexpected source cleanup target")
         self.deleted_sources.append((run_id, object_name))
+
+    def read_bound_source(self, *, record: SourceDocumentRecord, max_bytes: int) -> bytes:
+        expected = f"runs/{record.run_id}/source/regulation.pdf"
+        content = next(item[1] for item in self.sources if item[0] == record.run_id)
+        if (
+            record.object_name != expected
+            or record.gcs_uri != f"gs://test-private/{expected}"
+            or len(content) > max_bytes
+            or len(content) != record.size_bytes
+            or sha256(content).hexdigest() != record.source_sha256
+        ):
+            raise ValueError("source binding mismatch")
+        return content
 
     def store_audit_package_and_sign(self, *, run_id: str, content: bytes) -> str:
         self.audit_packages.append((run_id, content))

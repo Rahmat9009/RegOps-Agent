@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from regops_api.domain_models import (
     AnalystOutput,
     InvestigatorOutput,
+    SourceDocumentRecord,
     StoredSourceObject,
     WorkflowLaunchRequest,
 )
@@ -50,6 +51,8 @@ class RuntimeStoragePort(Protocol):
     ) -> StoredSourceObject: ...
 
     def delete_source(self, *, run_id: str, object_name: str) -> None: ...
+
+    def read_bound_source(self, *, record: SourceDocumentRecord, max_bytes: int) -> bytes: ...
 
     def store_audit_package_and_sign(
         self,

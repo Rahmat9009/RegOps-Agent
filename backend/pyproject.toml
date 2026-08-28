@@ -39,7 +39,11 @@ regops-api = "regops_api.main:run"
 where = ["src"]
 
 [tool.setuptools.package-data]
-regops_api = ["prompts/*.txt", "synthetic_corpus/*.json"]
+regops_api = [
+    "prompts/*.txt",
+    "runtime_fixtures/*.json",
+    "synthetic_corpus/*.json",
+]
 
 [tool.pytest.ini_options]
 addopts = "-ra --strict-config --strict-markers"

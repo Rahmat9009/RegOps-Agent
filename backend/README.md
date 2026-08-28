@@ -10,16 +10,22 @@ Google Workflows. It never fabricates obligations or findings.
 
 - `test` requires an explicitly injected runtime and may use the labelled in-memory
   repository and test fakes. It never discovers Google credentials.
-- `demo` is the currently deployable synthetic hackathon mode. It requires Firestore,
-  Cloud Storage, and Workflows configuration and assigns the backend-controlled
+- `demo` is the minimum live synthetic hackathon mode. It requires Firestore,
+  private Cloud Storage, Workflows, Model Armor, Vertex AI Gemini, Workflow OIDC,
+  and IAM `signBlob` configuration and assigns the backend-controlled
   `demo-reviewer` identity because all records are synthetic.
 - `production` requires those persistent services plus a trusted reviewer identity
   adapter. Authentication is not implemented by this phase. The default global app
   intentionally cannot start in production mode because it has no trusted identity
   adapter injection; startup fails closed rather than using the demo identity.
 
-`REGOPS_MODE` selects the mode (`production` by default). Persistent modes require
-`GOOGLE_CLOUD_PROJECT`, `REGOPS_REGION`, `REGOPS_BUCKET`, and `REGOPS_WORKFLOW`.
+`REGOPS_MODE` selects the mode (`production` by default). The live demo requires
+`GOOGLE_CLOUD_PROJECT`, `REGOPS_BUCKET`, `REGOPS_WORKFLOW`,
+`REGOPS_WORKFLOW_REGION`, `REGOPS_ARMOR_LOCATION`, `REGOPS_GEMINI_LOCATION`,
+`REGOPS_WORKFLOW_SERVICE_ACCOUNT`, `REGOPS_WORKER_AUDIENCE`,
+`REGOPS_AUDIT_SIGNER_SERVICE_ACCOUNT`, exact `REGOPS_CORS_ORIGINS`, and both
+Model Armor template variables. `REGOPS_REGION` is a temporary fallback for the
+three explicit locations; new configuration should not use it.
 `REGOPS_MAX_UPLOAD_BYTES` defaults to 10 MiB. `REGOPS_SIGNED_URL_TTL_SECONDS`
 defaults to 300 seconds and is constrained to 60–900 seconds. Demo and production
 never fall back to memory or fake integrations.
@@ -33,7 +39,7 @@ Firestore uses stable top-level collections: `runs`, `regulations`,
 `action_idempotency`, and `pending_approval_slots`. Pydantic JSON serialization is
 validated again on every read.
 
-Firestore transactions provide five concurrency boundaries:
+Firestore transactions provide six concurrency boundaries:
 
 - intake commits the initial Run, sequence-zero checkpoint, RegulationRecord, and
   SourceDocumentRecord together after the private source upload;
@@ -49,6 +55,9 @@ Firestore transactions provide five concurrency boundaries:
   status, shadow snapshot, lifecycle checkpoints, and audit events together;
 - an action write atomically claims its deterministic SHA-256 idempotency document,
   preserving automatic tag/review-task idempotency.
+- verified worker handoff atomically stores verified obligations, one finding, its
+  synthetic target, draft action/idempotency claim, Approval/pending guard, audit
+  events, checkpoints, and `VERIFYING → VERIFIED → AWAITING_APPROVAL`.
 
 Source contracts are immutable. Approved amendments are stored as separately bound
 shadow snapshots. Source PDFs use `runs/{run_id}/source/regulation.pdf`; generated
@@ -69,6 +78,29 @@ synchronous routes in its worker thread pool, while multipart intake delegates t
 synchronous service call through Starlette's managed thread-pool helper after the
 asynchronous upload read.
 
+## Minimum live worker slice
+
+`POST /internal/v1/workflow/run` accepts exactly the four-field Workflow envelope,
+is excluded from public OpenAPI, rebinds all fields to Firestore, and validates a
+Google OIDC token for the exact configured Workflow service account and audience.
+`GET /internal/v1/readiness` uses the same private boundary. The frozen health route
+remains liveness. CORS is an exact-origin browser policy and is not authentication.
+
+The worker reads only the persisted run object, enforces the PDF byte limit and exact
+lowercase SHA-256, and invokes the bounded parser and Model Armor-guarded Gemini
+analyst. A package fixture accepts only source hash
+`6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9` and maps one
+verified placement-fee prohibition to one synthetic contract conflict. This mapping
+is deterministic backend policy, not Gemini or ADK output. Unknown hashes fail
+closed; the 37-finding evaluation fixtures are unchanged.
+
+Preview and revalidation run the same deterministic matcher on a shadow copy. The
+source contract remains immutable. Approval stores `APPROVED_DRAFT` and traverses
+`EXECUTING → REVALIDATING → COMPLETED`; rejection traverses directly to `COMPLETED`
+and is excluded from executed/completed actions. Audit signing refreshes ADC and uses
+IAM Credentials `signBlob` for the exact audit object; no JSON service-account key is
+used or expected.
+
 ## Clean setup and checks (PowerShell)
 
 ```powershell
@@ -88,8 +120,9 @@ and requires no Google credentials. An optional test marked `firestore_emulator`
 runs only when `FIRESTORE_EMULATOR_HOST` is configured.
 
 Run locally with `.venv\Scripts\regops-api` or build `Dockerfile` for Cloud Run.
-Phase 1 remains a single-process service. The Gemini analyst adapter below is not
-wired into API orchestration. ADK and cloud resource provisioning are deferred.
+Phase 1 remains a single-process service. Gemini is wired only into the exact-hash
+minimum slice. ADK remains implemented and tested but is not invoked in that runtime
+path. Cloud resource provisioning is deferred.
 Cloud Run Jobs and Pub/Sub begin in Phase 2.
 
 ## Phase 1B.2B: guarded candidate extraction
@@ -161,8 +194,9 @@ fail without partial candidates. Default bounds are 8,192 generated tokens,
 32,000 output characters and 128,000 raw response bytes.
 
 `build_demo_analyst` requires `REGOPS_MODE=demo`, `GOOGLE_CLOUD_PROJECT`,
-`REGOPS_REGION`, `REGOPS_ARMOR_INPUT_TEMPLATE` and `REGOPS_ARMOR_OUTPUT_TEMPLATE`.
-Template names must belong to the configured project and region. Call `close()`
+`REGOPS_ARMOR_LOCATION`, `REGOPS_GEMINI_LOCATION`,
+`REGOPS_ARMOR_INPUT_TEMPLATE` and `REGOPS_ARMOR_OUTPUT_TEMPLATE`.
+Template names must belong to the configured project and Armor location. Call `close()`
 to release factory-owned clients. Tests inject fakes directly. Production remains
 unavailable; missing Armor configuration, raw API keys, alternate SDK endpoints
 and enabled message capture are rejected. Nothing silently falls back to the

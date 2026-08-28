@@ -29,6 +29,7 @@ from regops_api.schemas import (
     RunState,
     Severity,
 )
+from regops_api.worker_models import VerifiedWorkerOutput
 
 
 class DomainModel(BaseModel):
@@ -233,15 +234,13 @@ class ApprovalRequiredActionCommit(DomainModel):
             or amendment.contract_id != self.expected_finding.target_id
             or self.action_attempt_event.event_type is not AuditEventType.ACTION_ATTEMPTED
             or self.action_attempt_event.action_id != proposed.action_id
-            or self.first_execution_event.event_type
-            is not AuditEventType.IDEMPOTENCY_RESULT
+            or self.first_execution_event.event_type is not AuditEventType.IDEMPOTENCY_RESULT
             or self.first_execution_event.action_id != proposed.action_id
             or self.first_execution_event.idempotency_result
             is not IdempotencyResult.FIRST_EXECUTION
             or self.duplicate_event.event_type is not AuditEventType.IDEMPOTENCY_RESULT
             or self.duplicate_event.action_id != proposed.action_id
-            or self.duplicate_event.idempotency_result
-            is not IdempotencyResult.DUPLICATE_PREVENTED
+            or self.duplicate_event.idempotency_result is not IdempotencyResult.DUPLICATE_PREVENTED
         ):
             raise ValueError("approval-required action binding is invalid")
         return self
@@ -273,9 +272,7 @@ class RunIntakeCommit(DomainModel):
     @model_validator(mode="after")
     def records_are_coherently_bound(self) -> RunIntakeCommit:
         expected_object_name = f"runs/{self.run.run_id}/source/regulation.pdf"
-        gcs_object_name = self.source_document.gcs_uri.removeprefix("gs://").partition(
-            "/"
-        )[2]
+        gcs_object_name = self.source_document.gcs_uri.removeprefix("gs://").partition("/")[2]
         if (
             self.run.state is not RunState.INGESTED
             or self.checkpoint.run_id != self.run.run_id
@@ -286,8 +283,7 @@ class RunIntakeCommit(DomainModel):
             or self.source_document.run_id != self.run.run_id
             or self.source_document.regulation_id != self.run.regulation.reg_id
             or self.source_document.source_sha256 != self.regulation.content_sha256
-            or self.source_document.sanitized_filename
-            != self.run.regulation.source_filename
+            or self.source_document.sanitized_filename != self.run.regulation.source_filename
             or self.source_document.object_name != expected_object_name
             or gcs_object_name != expected_object_name
             or self.source_document.created_at != self.run.created_at
@@ -336,19 +332,20 @@ class AuditEvent(DomainModel):
             self.from_state is None or self.to_state is None
         ):
             raise ValueError("state_transition requires from_state and to_state")
-        if self.event_type in {
-            AuditEventType.ACTION_ATTEMPTED,
-            AuditEventType.ACTION_EXECUTED,
-        } and self.action_id is None:
+        if (
+            self.event_type
+            in {
+                AuditEventType.ACTION_ATTEMPTED,
+                AuditEventType.ACTION_EXECUTED,
+            }
+            and self.action_id is None
+        ):
             raise ValueError("action audit events require action_id")
         if self.event_type is AuditEventType.APPROVAL_DECIDED and (
             self.approval_id is None or self.actor is None
         ):
             raise ValueError("approval_decided requires approval_id and actor")
-        if (
-            self.event_type is AuditEventType.IDEMPOTENCY_RESULT
-            and self.idempotency_result is None
-        ):
+        if self.event_type is AuditEventType.IDEMPOTENCY_RESULT and self.idempotency_result is None:
             raise ValueError("idempotency_result event requires its result")
         if (
             self.event_type is AuditEventType.REVALIDATION_RESULT
@@ -383,3 +380,78 @@ class ApprovalDecisionCommit(DomainModel):
     snapshot: ShadowContractSnapshot | None = None
     checkpoints: list[RunCheckpoint]
     audit_events: list[AuditEvent]
+
+
+class WorkerHandoffRecord(DomainModel):
+    run_id: str = Field(min_length=1)
+    source_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    output_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    corpus_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    obligation_ids: list[str] = Field(min_length=1)
+    finding_id: str = Field(min_length=1)
+    action_id: str = Field(min_length=1)
+    approval_id: str = Field(min_length=1)
+    synthetic: Literal[True]
+
+
+class VerifiedWorkerHandoffCommit(DomainModel):
+    expected_source: SourceDocumentRecord
+    output: VerifiedWorkerOutput
+    obligations: list[Obligation] = Field(min_length=1)
+    contract: SyntheticContract
+    finding: Finding
+    action: ActionRecord
+    approval: Approval
+    pending_slot: PendingApprovalSlot
+    run: Run
+    checkpoints: list[RunCheckpoint] = Field(min_length=3, max_length=3)
+    audit_events: list[AuditEvent] = Field(min_length=5)
+    handoff: WorkerHandoffRecord
+
+    @model_validator(mode="after")
+    def records_are_coherently_bound(self) -> VerifiedWorkerHandoffCommit:
+        proposal = self.action.action
+        run_id = self.output.run_id
+        if (
+            self.expected_source.run_id != run_id
+            or self.expected_source.source_sha256 != self.output.source.source_sha256
+            or self.run.run_id != run_id
+            or self.run.state is not RunState.AWAITING_APPROVAL
+            or self.run.pending_approvals != [self.approval]
+            or self.finding.run_id != run_id
+            or self.finding.status is not FindingStatus.AWAITING_APPROVAL
+            or self.finding.proposed_action != proposal
+            or self.action.run_id != run_id
+            or self.action.amendment is None
+            or proposal.type is not ActionType.DRAFT_AMENDMENT
+            or proposal.autonomy is not ActionAutonomy.APPROVAL_REQUIRED
+            or proposal.status is not ActionStatus.AWAITING_APPROVAL
+            or self.approval.status is not ApprovalStatus.PENDING
+            or self.approval.run_id != run_id
+            or self.approval.action_id != proposal.action_id
+            or self.approval.finding_id != self.finding.finding_id
+            or self.pending_slot.run_id != run_id
+            or self.pending_slot.approval_id != self.approval.approval_id
+            or self.pending_slot.action_id != proposal.action_id
+            or self.pending_slot.finding_id != self.finding.finding_id
+            or self.handoff.run_id != run_id
+            or self.handoff.source_sha256 != self.output.source.source_sha256
+            or self.handoff.corpus_sha256 != self.output.corpus_sha256
+            or self.handoff.obligation_ids
+            != sorted(obligation.obligation_id for obligation in self.obligations)
+            or self.handoff.obligation_ids
+            != sorted(obligation.obligation_id for obligation in self.output.obligations)
+            or len(self.output.findings) != 1
+            or self.output.findings[0].finding_id != self.finding.finding_id
+            or self.finding.obligation.obligation_id
+            != self.output.findings[0].obligation.obligation_id
+            or self.handoff.finding_id != self.finding.finding_id
+            or self.handoff.action_id != proposal.action_id
+            or self.handoff.approval_id != self.approval.approval_id
+            or [checkpoint.state for checkpoint in self.checkpoints]
+            != [RunState.VERIFYING, RunState.VERIFIED, RunState.AWAITING_APPROVAL]
+            or any(checkpoint.run_id != run_id for checkpoint in self.checkpoints)
+            or any(event.run_id != run_id for event in self.audit_events)
+        ):
+            raise ValueError("verified worker handoff binding is invalid")
+        return self
