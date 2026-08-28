@@ -214,6 +214,25 @@ direct pins are checked by the default integrity test.
 API references used for the adapter: [Google Gen AI SDK](https://googleapis.github.io/python-genai/)
 and [Model Armor sanitization result](https://docs.cloud.google.com/model-armor/reference/rest/v1/SanitizationResult).
 
-Phase 1B.2C remains the single ADK application, analyst/investigator capability
-separation, impact investigator, fixed read-only corpus tools, session boundaries,
-and their tests. Persistence/orchestration remains Phase 1B.2D.
+## Phase 1B.2C: ADK Impact Investigator
+
+This phase adds one ADK application topology with a deterministic sequential root
+and exactly two single-turn components. The Analyst has no model-callable tools;
+the Investigator has exactly five package-bound, read-only functions over the
+immutable synthetic corpus. Neither component receives persistence, approval,
+action, amendment, generic query, network, search, or code-execution capability.
+
+The checked-in five-record corpus is strict, frozen, visibly synthetic, and bound
+to canonical manifest and per-record SHA-256 digests. Tool calls accept only exact
+contract/clause/case/policy IDs and return bounded JSON copies with exact evidence
+anchors. Unknown IDs fail closed without echoing the input.
+
+Investigation is one-shot. Its session ID is derived from the run ID, canonical
+obligation-set digest, corpus digest, model, instruction version, and tool-schema
+version. A fresh `InMemorySessionService` is used per call; session state contains
+only digests, backend obligation IDs, and `synthetic: true`. Candidate output is
+independently parsed into strict `InvestigatorDraftOutput`; it cannot carry action,
+approval, amendment, status, authoritative run, or finding fields.
+
+The application is not wired into API intake or lifecycle state. Persistent stage
+commits, orchestration, recovery, and action handoff remain Phase 1B.2D.

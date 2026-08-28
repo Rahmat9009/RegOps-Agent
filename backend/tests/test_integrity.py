@@ -6,6 +6,8 @@ from pathlib import Path
 
 import google.auth
 import pytest
+from packaging.requirements import Requirement
+from packaging.utils import canonicalize_name
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 
@@ -31,8 +33,33 @@ def test_dependency_locks_share_runtime_pins_and_match_direct_requirements() -> 
     dev = set((backend / "requirements-dev.lock").read_text().splitlines())
     project = tomllib.loads((backend / "pyproject.toml").read_text())["project"]
     assert runtime <= dev
-    assert set(project["dependencies"]) <= runtime
-    assert set(project["optional-dependencies"]["dev"]) <= dev
+
+    def pins(lines: set[str]) -> dict[str, str]:
+        return {
+            canonicalize_name(line.split("==", 1)[0]): line.split("==", 1)[1]
+            for line in lines
+        }
+
+    def assert_direct(requirements: list[str], locked: set[str]) -> None:
+        locked_pins = pins(locked)
+        for value in requirements:
+            requirement = Requirement(value)
+            versions = [
+                specifier.version
+                for specifier in requirement.specifier
+                if specifier.operator == "=="
+            ]
+            assert len(versions) == 1
+            assert locked_pins[canonicalize_name(requirement.name)] == versions[0]
+
+    assert_direct(project["dependencies"], runtime)
+    assert_direct(project["optional-dependencies"]["dev"], dev)
+    aiplatform = next(
+        Requirement(value)
+        for value in project["dependencies"]
+        if Requirement(value).name == "google-cloud-aiplatform"
+    )
+    assert aiplatform.extras == {"adk", "agent_engines"}
 
 
 def test_offline_guard_allows_internal_socketpair_but_not_network_or_adc() -> None:

@@ -1,0 +1,189 @@
+{
+  "manifest_version": "synthetic-corpus-manifest-v1",
+  "canonical_sha256": "2dd9ae3171443ffe96cb288c349a86b458d2f1a40cb3b1c575f3a9187a34bc9a",
+  "snapshot": {
+    "schema_version": "worker-corpus-v1",
+    "records": [
+      {
+        "document": {
+          "identity": {
+            "doc_id": "syn-contract-worker-001",
+            "doc_kind": "contract",
+            "source_sha256": "771dae3ffc3d7617d8d36f346c670fc26049a162d1d63cc88abec42ee2bcc723",
+            "page_count": 1,
+            "synthetic": true
+          },
+          "pages": [
+            {
+              "doc_id": "syn-contract-worker-001",
+              "source_sha256": "771dae3ffc3d7617d8d36f346c670fc26049a162d1d63cc88abec42ee2bcc723",
+              "page": 1,
+              "text": "SYNTHETIC DEMO CONTRACT — WORKER 001\nClause placement-fee: The synthetic worker must pay a placement fee of BDT 11,000 before deployment.\nThis is a synthetic contract shadow-test source; it represents no real person or agreement.\n"
+            }
+          ]
+        },
+        "title": "SYNTHETIC DEMO CONTRACT — WORKER 001",
+        "evidence": [
+          {
+            "doc_id": "syn-contract-worker-001",
+            "doc_kind": "contract",
+            "source_sha256": "771dae3ffc3d7617d8d36f346c670fc26049a162d1d63cc88abec42ee2bcc723",
+            "page": 1,
+            "quote": "Clause placement-fee: The synthetic worker must pay a placement fee of BDT 11,000 before deployment."
+          }
+        ]
+      },
+      {
+        "document": {
+          "identity": {
+            "doc_id": "syn-case-fee-001",
+            "doc_kind": "case",
+            "source_sha256": "6bdc4391e593e386783530eacc1af6cc5da19463141fe621540caba589428e1e",
+            "page_count": 1,
+            "synthetic": true
+          },
+          "pages": [
+            {
+              "doc_id": "syn-case-fee-001",
+              "source_sha256": "6bdc4391e593e386783530eacc1af6cc5da19463141fe621540caba589428e1e",
+              "page": 1,
+              "text": "SYNTHETIC DEMO CASE — FEE 001\nSynthetic fact: BDT 11,000 was collected from the synthetic worker under syn-contract-worker-001 clause placement-fee.\nThis case contains no real person, payment, or deployment.\n"
+            }
+          ]
+        },
+        "title": "SYNTHETIC DEMO CASE — FEE 001",
+        "evidence": [
+          {
+            "doc_id": "syn-case-fee-001",
+            "doc_kind": "case",
+            "source_sha256": "6bdc4391e593e386783530eacc1af6cc5da19463141fe621540caba589428e1e",
+            "page": 1,
+            "quote": "Synthetic fact: BDT 11,000 was collected from the synthetic worker under syn-contract-worker-001 clause placement-fee."
+          }
+        ]
+      },
+      {
+        "document": {
+          "identity": {
+            "doc_id": "syn-policy-fees-001",
+            "doc_kind": "policy",
+            "source_sha256": "94dc4772d01ead85bfff0331b7b606da8d999f60e8e6e3ee9b339adb4bcdb4f4",
+            "page_count": 1,
+            "synthetic": true
+          },
+          "pages": [
+            {
+              "doc_id": "syn-policy-fees-001",
+              "source_sha256": "94dc4772d01ead85bfff0331b7b606da8d999f60e8e6e3ee9b339adb4bcdb4f4",
+              "page": 1,
+              "text": "SYNTHETIC DEMO POLICY — FEES 001\nPolicy fee-rule: A worker-paid placement fee of up to BDT 11,000 remains permitted for synthetic deployments.\nThis is an internal synthetic policy and is not legal advice.\n"
+            }
+          ]
+        },
+        "title": "SYNTHETIC DEMO POLICY — FEES 001",
+        "evidence": [
+          {
+            "doc_id": "syn-policy-fees-001",
+            "doc_kind": "policy",
+            "source_sha256": "94dc4772d01ead85bfff0331b7b606da8d999f60e8e6e3ee9b339adb4bcdb4f4",
+            "page": 1,
+            "quote": "Policy fee-rule: A worker-paid placement fee of up to BDT 11,000 remains permitted for synthetic deployments."
+          }
+        ]
+      },
+      {
+        "document": {
+          "identity": {
+            "doc_id": "syn-contract-worker-002",
+            "doc_kind": "contract",
+            "source_sha256": "93fd970bfdb6695af7f20f44f1cb082946bc59c5e508d144b4488e82d5d9c2a2",
+            "page_count": 1,
+            "synthetic": true
+          },
+          "pages": [
+            {
+              "doc_id": "syn-contract-worker-002",
+              "source_sha256": "93fd970bfdb6695af7f20f44f1cb082946bc59c5e508d144b4488e82d5d9c2a2",
+              "page": 1,
+              "text": "SYNTHETIC DEMO CONTRACT — WORKER 002\nClause placement-fee: The employer pays all placement costs; the synthetic worker must not be charged a placement fee.\nThis is a synthetic contract shadow-test source; it represents no real person or agreement.\n"
+            }
+          ]
+        },
+        "title": "SYNTHETIC DEMO CONTRACT — WORKER 002",
+        "evidence": [
+          {
+            "doc_id": "syn-contract-worker-002",
+            "doc_kind": "contract",
+            "source_sha256": "93fd970bfdb6695af7f20f44f1cb082946bc59c5e508d144b4488e82d5d9c2a2",
+            "page": 1,
+            "quote": "Clause placement-fee: The employer pays all placement costs; the synthetic worker must not be charged a placement fee."
+          }
+        ]
+      },
+      {
+        "document": {
+          "identity": {
+            "doc_id": "syn-case-fee-002",
+            "doc_kind": "case",
+            "source_sha256": "c540b1d44e7fd7d261640b9d1b8512c9a21691bc96a5ae01f89ec385adcad2b0",
+            "page_count": 1,
+            "synthetic": true
+          },
+          "pages": [
+            {
+              "doc_id": "syn-case-fee-002",
+              "source_sha256": "c540b1d44e7fd7d261640b9d1b8512c9a21691bc96a5ae01f89ec385adcad2b0",
+              "page": 1,
+              "text": "SYNTHETIC DEMO CASE — FEE 002\nSynthetic fact: No placement fee was charged to the synthetic worker under syn-contract-worker-002.\nThis case contains no real person, payment, or deployment.\n"
+            }
+          ]
+        },
+        "title": "SYNTHETIC DEMO CASE — FEE 002",
+        "evidence": [
+          {
+            "doc_id": "syn-case-fee-002",
+            "doc_kind": "case",
+            "source_sha256": "c540b1d44e7fd7d261640b9d1b8512c9a21691bc96a5ae01f89ec385adcad2b0",
+            "page": 1,
+            "quote": "Synthetic fact: No placement fee was charged to the synthetic worker under syn-contract-worker-002."
+          }
+        ]
+      }
+    ],
+    "impacts": [],
+    "synthetic": true
+  },
+  "entries": [
+    {
+      "record_id": "syn-contract-worker-001",
+      "summary": "SYNTHETIC DEMO contract requiring a worker-paid placement fee.",
+      "clause_ids": ["placement-fee"],
+      "facts": ["The synthetic worker is charged BDT 11,000 before deployment."]
+    },
+    {
+      "record_id": "syn-case-fee-001",
+      "summary": "SYNTHETIC DEMO case recording collection of the contract fee.",
+      "clause_ids": [],
+      "facts": ["BDT 11,000 was collected under syn-contract-worker-001 clause placement-fee."]
+    },
+    {
+      "record_id": "syn-policy-fees-001",
+      "summary": "SYNTHETIC DEMO internal policy permitting worker-paid fees.",
+      "clause_ids": [],
+      "facts": ["The policy permits a worker-paid placement fee up to BDT 11,000."]
+    },
+    {
+      "record_id": "syn-contract-worker-002",
+      "summary": "SYNTHETIC DEMO unaffected contract prohibiting worker-paid placement fees.",
+      "clause_ids": ["placement-fee"],
+      "facts": ["The employer pays all placement costs and the worker must not be charged."]
+    },
+    {
+      "record_id": "syn-case-fee-002",
+      "summary": "SYNTHETIC DEMO unaffected case recording no worker-paid fee.",
+      "clause_ids": [],
+      "facts": ["No placement fee was charged under syn-contract-worker-002."]
+    }
+  ],
+  "synthetic": true
+}
