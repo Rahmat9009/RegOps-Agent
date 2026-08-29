@@ -541,9 +541,10 @@ Only safe codes and fixed messages enter recovery/API/audit surfaces.
 | `VERIFICATION_FAILED` | Terminal for invariant/synthetic-data violation; retryable only for missing transient storage read | No unverified finding is persisted. |
 
 `FAILED_RECOVERABLE` records the prior active state as `resume_state`. Resuming must first append
-the allowed transition back to that exact state. Retry budgets are stored in an internal
-run/stage attempt record and summarized in `Run.recovery.attempt_count`; clients cannot reset
-them.
+the allowed transition back to that exact state. Each actual failed recovery cycle appends one
+`FAILED_RECOVERABLE` transition; `Run.recovery.attempt_count` is derived from that append-only
+history, so clearing the active recovery object during resume cannot reset it and duplicate
+failure handling cannot double-increment it. Clients cannot reset the count.
 
 Idempotency is achieved through stable IDs, unique Firestore document IDs, compare-and-set run
 state, atomic stage commits, corpus/input digests, deterministic event IDs, and existing action

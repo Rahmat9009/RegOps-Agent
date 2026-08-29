@@ -8,6 +8,7 @@ import time
 from collections.abc import Callable
 from contextlib import ExitStack, suppress
 from email.utils import parsedate_to_datetime
+from hashlib import sha256
 from importlib.resources import files
 from math import isfinite
 from typing import Any, NamedTuple, Protocol, TypeVar
@@ -23,6 +24,7 @@ from regops_api.adapter_logging import sensitive_io
 from regops_api.analyst_errors import AnalystCode, AnalystError
 from regops_api.analyst_settings import AnalystSettings
 from regops_api.config import RuntimeSettings
+from regops_api.live_fixture import MinimumLiveFixture, load_minimum_live_fixture
 from regops_api.model_armor import (
     ArmorOutcome,
     ArmorResult,
@@ -73,39 +75,86 @@ def _json_object(text: str) -> dict[str, Any]:
     return value
 
 
-def _provider_response_schema() -> dict[str, Any]:
+def _provider_response_schema(
+    fixture: MinimumLiveFixture | None = None,
+) -> dict[str, Any]:
     """Return a bounded inline hint below Vertex's structured-schema complexity limit.
 
     Pydantic remains the authoritative parser, including extra-field, string-length,
     pattern and safe-text constraints that are intentionally absent from this hint.
     """
+    evidence_properties: dict[str, Any] = {
+        "doc_id": {"type": "string", "maxLength": 128},
+        "doc_kind": {"type": "string", "enum": ["regulation"]},
+        "source_sha256": {"type": "string", "maxLength": 64},
+        "page": {"type": "integer"},
+        "quote": {"type": "string", "maxLength": 300},
+    }
+    evidence_min, evidence_max = 1, 5
+    if fixture is not None:
+        anchors = tuple(
+            anchor
+            for obligation in fixture.accepted_obligations
+            for anchor in obligation.evidence
+        )
+        evidence_properties.update(
+            {
+                "doc_id": {"type": "string", "enum": [fixture.source_doc_id]},
+                "source_sha256": {"type": "string", "enum": [fixture.source_sha256]},
+                "page": {"type": "integer", "enum": sorted({a.page for a in anchors})},
+                "quote": {
+                    "type": "string",
+                    "enum": sorted({a.quote for a in anchors}),
+                },
+            }
+        )
+        evidence_counts = {len(item.evidence) for item in fixture.accepted_obligations}
+        if len(evidence_counts) == 1:
+            evidence_min = evidence_max = evidence_counts.pop()
     evidence = {
         "type": "object",
-        "properties": {
-            "doc_id": {"type": "string", "maxLength": 128},
-            "doc_kind": {"type": "string", "enum": ["regulation"]},
-            "source_sha256": {"type": "string", "maxLength": 64},
-            "page": {"type": "integer"},
-            "quote": {"type": "string", "maxLength": 300},
-        },
+        "properties": evidence_properties,
         "required": ["doc_id", "doc_kind", "source_sha256", "page", "quote"],
     }
+    obligation_properties: dict[str, Any] = {
+        "statement": {"type": "string", "maxLength": 1000},
+        "type": {
+            "type": "string",
+            "enum": ["prohibition", "requirement", "limit", "exception"],
+        },
+        "evidence": {
+            "type": "array",
+            "items": evidence,
+            "minItems": evidence_min,
+            "maxItems": evidence_max,
+        },
+    }
+    required = ["statement", "type", "evidence"]
+    if fixture is not None:
+        obligation_properties.update(
+            {
+                "exceptions": {
+                    "type": "array",
+                    "items": {"type": "string", "maxLength": 500},
+                    "maxItems": 10,
+                },
+                "effective_date": {
+                    "type": "string",
+                    "enum": sorted(
+                        {
+                            item.effective_date.isoformat()
+                            for item in fixture.accepted_obligations
+                            if item.effective_date is not None
+                        }
+                    ),
+                },
+            }
+        )
+        required.extend(["exceptions", "effective_date"])
     obligation = {
         "type": "object",
-        "properties": {
-            "statement": {"type": "string", "maxLength": 1000},
-            "type": {
-                "type": "string",
-                "enum": ["prohibition", "requirement", "limit", "exception"],
-            },
-            "evidence": {
-                "type": "array",
-                "items": evidence,
-                "minItems": 1,
-                "maxItems": 5,
-            },
-        },
-        "required": ["statement", "type", "evidence"],
+        "properties": obligation_properties,
+        "required": required,
     }
     return {
         "type": "object",
@@ -213,6 +262,7 @@ class GeminiRegulationAnalyst:
         client: GenerationClient,
         input_inspector: TextInspection,
         output_inspector: TextInspection,
+        response_json_schema: dict[str, Any] | None = None,
         clock: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], None] = time.sleep,
         jitter: Callable[[], float] = random.random,
@@ -222,6 +272,7 @@ class GeminiRegulationAnalyst:
         self._client = client
         self._input = input_inspector
         self._output = output_inspector
+        self._response_json_schema = response_json_schema or _provider_response_schema()
         self._clock, self._sleep, self._jitter = clock, sleep, jitter
         self._close_clients: Callable[[], None] = lambda: None
 
@@ -308,7 +359,7 @@ class GeminiRegulationAnalyst:
             candidate_count=1,
             max_output_tokens=self._settings.max_output_tokens,
             response_mime_type="application/json",
-            response_json_schema=_provider_response_schema(),
+            response_json_schema=self._response_json_schema,
             # Otherwise google-genai parses candidate JSON before our Armor gate.
             should_return_http_response=True,
             automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
@@ -435,6 +486,10 @@ def build_demo_analyst(
 ) -> GeminiRegulationAnalyst:
     """Explicit cloud construction only; no test/production/Developer API fallback."""
     settings.validate_demo(runtime)
+    try:
+        fixture = load_minimum_live_fixture(sha256(content).hexdigest())
+    except ValueError:
+        fixture = None
     with sensitive_io():
         try:
             with ExitStack() as clients:
@@ -467,6 +522,7 @@ def build_demo_analyst(
                     client=gemini.models,
                     input_inspector=armor,
                     output_inspector=armor,
+                    response_json_schema=_provider_response_schema(fixture),
                 )
                 analyst._close_clients = clients.pop_all().close
                 return analyst

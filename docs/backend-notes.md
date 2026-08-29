@@ -1,5 +1,52 @@
 # Backend contract notes
 
+## 2026-08-29 — minimum-live obligation reconciliation (no contract change)
+
+The frozen contract and frontend remain unchanged. One opt-in ADC/Vertex Enterprise
+diagnostic ran the exact tracked synthetic PDF through the current input Armor gate,
+Gemini 3.5 analyst, output Armor gate, strict Pydantic parser and unchanged
+`verify_obligations`. It emitted no candidate text, quotation, signature, provider
+payload, credential or token. The safe result was three candidates and three
+accepted records, one `UNSUPPORTED_OBLIGATION` issue, matching obligation types,
+and mismatches in statement, effective date and every complete evidence-set
+dimension (document, page, quotation and cardinality). Zero candidate evidence sets
+uniquely identified an accepted obligation. This proves the deployed failure was
+unsupported candidate/evidence output, not malformed transport or verifier drift.
+
+The evidence branch remains fail closed. For the exact
+`minimum-live-slice-v1`/SHA-256
+`6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9`
+only, the provider projection now restricts source binding fields and evidence
+choices to the fixture's already verified anchors, requires exactly the complete
+two-anchor set per candidate, and requires explicit date and exception fields. The
+v3 prompt requires verbatim source binding and exact, non-shortened,
+non-paraphrased quotations. Wrong, partial, ambiguous, duplicate or unknown
+evidence remains rejected; no fuzzy quotation matching was added.
+
+A second, independent deterministic synthetic-demo gate reconciles only statement
+wording. It activates only in demo composition after strict model parsing and only
+when a candidate's complete evidence set uniquely identifies one accepted fixture
+obligation using existing layout-whitespace normalization, every unchanged anchor
+passes the exact evidence verifier, and type, effective date and exceptions match.
+It replaces only the statement with the catalog's canonical statement. All
+candidates must form a complete one-to-one mapping; otherwise the original
+candidates go unchanged to the general verifier and fail. The general verifier was
+not modified. Unknown hashes receive the base projection and no reconciliation;
+production composition rejects the minimum-live worker.
+
+The content-free diagnostic is opt-in through
+`REGOPS_LIVE_OBLIGATION_DIAGNOSTIC=1` and excluded from default tests. It was run
+once to establish the mismatch. The changed projection was not repeatedly sampled
+until an output passed and has not been deployed.
+
+The recovery count defect was separate: resume intentionally cleared `Run.recovery`,
+but the next failure derived its count only from that cleared object, resetting the
+displayed count to one. Counts now derive from append-only transitions into
+`FAILED_RECOVERABLE`; each actual failed recovery appends one transition and
+increments once. A duplicate failure handler that observes the already-failed state
+does neither. Checkpoint resume, deterministic IDs and atomic handoff behavior are
+unchanged.
+
 ## 2026-08-29 — Model Armor output wrapper correction (no contract change)
 
 The frozen contract and frontend remain unchanged. An opt-in, content-free live
@@ -26,9 +73,9 @@ authorize a candidate, while inspecting it can make non-content transport fields
 look like model instructions. If decoded text is blocked, the category-specific
 failure is preserved and no candidate parsing or persistence occurs.
 
-To reduce the observed model-authored variant, the system prompt is versioned to
-`regulation-analyst-v2` and requires neutral third-person declarative candidate
-fields, forbids prompt/meta/instructional material in candidate prose, and requires
+To reduce the observed model-authored variant, the system prompt was versioned to
+`regulation-analyst-v2` and required neutral third-person declarative candidate
+fields, forbade prompt/meta/instructional material in candidate prose, and required
 the shortest exact supporting quotation without adjacent unrelated material. The
 provider projection additionally applies existing Pydantic string bounds and fixed
 obligation/document-kind enums. Strict Pydantic parsing and deterministic

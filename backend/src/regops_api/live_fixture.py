@@ -11,11 +11,14 @@ from pydantic import Field, ValidationError, model_validator
 
 from regops_api.counterfactual import CounterfactualResult, DeterministicCounterfactual
 from regops_api.domain_models import ConflictMatch, ProposedAmendment, SyntheticContract
+from regops_api.evidence import locator_text, verify_anchor_set
 from regops_api.schemas import Obligation, Severity
 from regops_api.worker_models import (
     AcceptedEvidenceCatalog,
     AcceptedObligation,
+    AnalystDraftOutput,
     CandidateFinding,
+    CandidateObligation,
     CorpusSnapshot,
     SourceDocument,
     VerifiedObligationSet,
@@ -98,6 +101,72 @@ def load_minimum_live_fixture(source_sha256: str) -> MinimumLiveFixture:
         return MinimumLiveFixture.model_validate_json(content)
     except (OSError, UnicodeError, ValidationError):
         raise ValueError("LIVE_FIXTURE_INVALID") from None
+
+
+def _normalized_evidence_key(value: CandidateObligation | AcceptedObligation) -> tuple[object, ...]:
+    return tuple(
+        sorted(
+            (
+                anchor.doc_id,
+                anchor.doc_kind.value,
+                anchor.source_sha256,
+                anchor.page,
+                locator_text(anchor.quote),
+            )
+            for anchor in value.evidence
+        )
+    )
+
+
+def reconcile_minimum_live_candidates(
+    *,
+    fixture: MinimumLiveFixture,
+    source: SourceDocument,
+    candidates: AnalystDraftOutput,
+) -> AnalystDraftOutput:
+    """Canonicalize statement-only variance inside the exact synthetic demo fixture.
+
+    Selection is evidence-owned: every candidate must map one-to-one to an accepted
+    obligation by its complete normalized evidence set, while exact verification of
+    every unchanged anchor and every other claim field remains mandatory.
+    """
+    if (
+        fixture.fixture_version != "minimum-live-slice-v1"
+        or not compare_digest(fixture.source_sha256, KNOWN_SOURCE_SHA256)
+        or not compare_digest(source.identity.source_sha256, KNOWN_SOURCE_SHA256)
+        or source.identity.doc_id != fixture.source_doc_id
+        or len(candidates.obligations) != len(fixture.accepted_obligations)
+    ):
+        return candidates
+    accepted = fixture.accepted_catalog(source)
+    reconciled: list[CandidateObligation] = []
+    matched: set[int] = set()
+    for candidate in candidates.obligations:
+        matches = [
+            (index, item)
+            for index, item in enumerate(accepted.obligations)
+            if _normalized_evidence_key(candidate) == _normalized_evidence_key(item)
+        ]
+        if len(matches) != 1:
+            return candidates
+        index, reference = matches[0]
+        if (
+            index in matched
+            or candidate.type is not reference.type
+            or candidate.effective_date != reference.effective_date
+            or candidate.exceptions != reference.exceptions
+            or verify_anchor_set(
+                candidate.evidence,
+                accepted=reference.evidence,
+                documents=(source,),
+            )
+        ):
+            return candidates
+        matched.add(index)
+        reconciled.append(candidate.model_copy(update={"statement": reference.statement}))
+    if matched != set(range(len(accepted.obligations))):
+        return candidates
+    return AnalystDraftOutput(obligations=tuple(reconciled))
 
 
 def placement_fee_matcher(

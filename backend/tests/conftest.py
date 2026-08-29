@@ -17,6 +17,7 @@ def offline_by_default(request: pytest.FixtureRequest, monkeypatch: pytest.Monke
             "REGOPS_LIVE_GEMINI",
             "REGOPS_LIVE_GEMINI_DIAGNOSTIC",
             "REGOPS_LIVE_GEMINI_ARMOR_DIAGNOSTIC",
+            "REGOPS_LIVE_OBLIGATION_DIAGNOSTIC",
         )
     )
     if request.node.get_closest_marker("live_gemini") and live_gemini_enabled:

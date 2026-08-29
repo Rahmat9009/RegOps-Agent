@@ -19,6 +19,7 @@ from regops_api.analyst_settings import AnalystSettings, PdfLimits
 from regops_api.config import RuntimeMode, RuntimeSettings
 from regops_api.evidence import locator_text
 from regops_api.gemini_analyst import GeminiRegulationAnalyst, analyst_prompt, build_demo_analyst
+from regops_api.live_fixture import KNOWN_SOURCE_SHA256, load_minimum_live_fixture
 from regops_api.model_armor import ArmorOutcome, ArmorResult, Direction
 from regops_api.verification import verify_obligations
 from regops_api.worker_ids import canonical_bytes
@@ -182,6 +183,35 @@ def test_provider_schema_projection_keeps_supported_bounds_without_weakening_pyd
     assert strict["$defs"]["EvidenceAnchor"]["properties"]["page"]["minimum"] == 1
     assert "additionalProperties" not in projected_obligation
     assert AnalystDraftOutput.model_json_schema() == strict
+
+
+def test_exact_hash_projection_requires_complete_fixture_evidence_without_weakening_parser(
+) -> None:
+    fixture = load_minimum_live_fixture(KNOWN_SOURCE_SHA256)
+    projected = gemini_analyst._provider_response_schema(fixture)
+    obligation = projected["properties"]["obligations"]["items"]
+    evidence_array = obligation["properties"]["evidence"]
+    evidence = evidence_array["items"]["properties"]
+
+    assert evidence["doc_id"]["enum"] == [fixture.source_doc_id]
+    assert evidence["source_sha256"]["enum"] == [KNOWN_SOURCE_SHA256]
+    assert evidence["page"]["enum"] == [3]
+    assert len(evidence["quote"]["enum"]) == 4
+    assert evidence_array["minItems"] == evidence_array["maxItems"] == 2
+    assert set(obligation["required"]) == {
+        "statement",
+        "type",
+        "exceptions",
+        "effective_date",
+        "evidence",
+    }
+    assert obligation["properties"]["effective_date"]["enum"] == ["2026-10-01"]
+    assert "exceptions" not in gemini_analyst._provider_response_schema()["properties"][
+        "obligations"
+    ]["items"]["properties"]
+    assert AnalystDraftOutput.model_json_schema()["properties"]["obligations"][
+        "maxItems"
+    ] == 50
 
 
 @pytest.mark.parametrize(
@@ -604,7 +634,7 @@ def test_stage_deadline_caps_every_call() -> None:
 
 def test_prompt_authority_and_version_guard() -> None:
     prompt = analyst_prompt()
-    assert "regulation-analyst-v2" in prompt
+    assert "regulation-analyst-v3" in prompt
     assert "candidate\nobligations only" in prompt
     for phrase in (
         "document ID",
@@ -615,6 +645,8 @@ def test_prompt_authority_and_version_guard() -> None:
         "legal conclusions",
         "neutral, third-person",
         "shortest contiguous clause",
+        "exactly two evidence anchors",
+        "Never shorten",
     ):
         assert phrase in prompt
     for phrase in (
@@ -706,6 +738,13 @@ def test_demo_factory_uses_enterprise_adc_configuration_and_real_armor(
     assert (
         calls["armor"]["client_options"].api_endpoint == "modelarmor.us-central1.rep.googleapis.com"
     )
+    exact_evidence = result._response_json_schema["properties"]["obligations"]["items"][
+        "properties"
+    ]["evidence"]
+    assert exact_evidence["items"]["properties"]["source_sha256"]["enum"] == [
+        KNOWN_SOURCE_SHA256
+    ]
+    assert exact_evidence["minItems"] == exact_evidence["maxItems"] == 2
     result.close()
     assert calls["gemini_closed"] and calls["armor_closed"]
 

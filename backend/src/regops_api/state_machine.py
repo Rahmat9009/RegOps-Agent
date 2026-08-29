@@ -181,10 +181,14 @@ def plan_run_transition(
     RunStateMachine().validate(run.state, target, checkpoint=checkpoint)
     recovery = run.recovery
     if target is RunState.FAILED_RECOVERABLE:
+        prior_attempts = sum(
+            transition.to_state is RunState.FAILED_RECOVERABLE
+            for transition in run.transitions
+        )
         recovery = RecoveryInfo(
             recovery_available=True,
             checkpoint_state=run.state,
-            attempt_count=1 if recovery is None else recovery.attempt_count + 1,
+            attempt_count=prior_attempts + 1,
             last_error_code=failure_code,
             last_error_message=reason,
         )

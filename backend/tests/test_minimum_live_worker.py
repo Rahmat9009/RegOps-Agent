@@ -8,6 +8,7 @@ from typing import Any, cast
 import pytest
 from fastapi.testclient import TestClient
 
+from regops_api import worker_runtime
 from regops_api.analyst_errors import AnalystCode, AnalystError
 from regops_api.analyst_settings import AnalystSettings
 from regops_api.domain_models import (
@@ -41,6 +42,7 @@ from regops_api.schemas import (
     Run,
     RunState,
 )
+from regops_api.state_machine import RunStateCoordinator
 from regops_api.worker_models import AnalystDraftOutput, CandidateObligation, SourceDocument
 from regops_api.worker_runtime import MinimumLiveWorker
 from tests.factories import NOW, make_obligation, make_run
@@ -101,15 +103,33 @@ class UnsupportedAnalyst(FixtureAnalyst):
 
 
 class RejectOnceAnalyst(FixtureAnalyst):
-    def __init__(self, code: AnalystCode = AnalystCode.GEMINI_REQUEST_REJECTED) -> None:
+    def __init__(
+        self,
+        code: AnalystCode = AnalystCode.GEMINI_REQUEST_REJECTED,
+        failures: int = 1,
+    ) -> None:
         self.calls = 0
         self.code = code
+        self.failures = failures
 
     def analyze(self, *, source: SourceDocument) -> AnalystDraftOutput:
         self.calls += 1
-        if self.calls == 1:
+        if self.calls <= self.failures:
             raise AnalystError(self.code)
         return super().analyze(source=source)
+
+
+class VariantStatementAnalyst(FixtureAnalyst):
+    def analyze(self, *, source: SourceDocument) -> AnalystDraftOutput:
+        output = super().analyze(source=source)
+        return AnalystDraftOutput(
+            obligations=tuple(
+                item.model_copy(
+                    update={"statement": f"Non-authoritative synthetic wording {index}."}
+                )
+                for index, item in enumerate(output.obligations, start=1)
+            )
+        )
 
 
 class Identity:
@@ -280,7 +300,9 @@ def test_corrupt_partial_handoff_fails_with_conflict_and_is_not_repaired() -> No
     assert runtime.repositories.list_approvals(run.run_id) == []
 
 
-def test_unsupported_candidate_persists_sanitized_recoverable_checkpoint() -> None:
+def test_unsupported_candidate_persists_sanitized_recoverable_checkpoint(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     runtime, run, envelope = seeded_runtime()
     worker = MinimumLiveWorker(
         repositories=runtime.repositories,
@@ -302,6 +324,8 @@ def test_unsupported_candidate_persists_sanitized_recoverable_checkpoint() -> No
     assert checkpoint.state is RunState.FAILED_RECOVERABLE
     assert checkpoint.resume_state is RunState.EXTRACTING
     assert runtime.repositories.list_obligations(run.run_id) == []
+    assert "Unsupported synthetic candidate." not in caplog.text
+    assert "Unsupported synthetic candidate." not in failed.model_dump_json()
     assert runtime.worker is not None
     recovered = runtime.worker.run(envelope)
     assert recovered.state == "AWAITING_APPROVAL"
@@ -360,6 +384,138 @@ def test_original_envelope_resumes_analyst_failure_without_duplicate_records(
     assert len(runtime.repositories.list_approvals(run.run_id)) == 1
     events = runtime.repositories.list_audit_events(run.run_id)
     assert len({event.event_id for event in events}) == len(events)
+    events_before_duplicate = tuple(events)
+    duplicate = worker.run(envelope)
+    assert duplicate.duplicate_delivery
+    assert duplicate.finding_id == recovered.finding_id
+    assert duplicate.action_id == recovered.action_id
+    assert duplicate.approval_id == recovered.approval_id
+    assert tuple(runtime.repositories.list_audit_events(run.run_id)) == events_before_duplicate
+
+
+def test_statement_variants_persist_only_canonical_fixture_wording() -> None:
+    runtime, run, envelope = seeded_runtime()
+    fixture = load_minimum_live_fixture(KNOWN_SOURCE_SHA256)
+    generated = tuple(
+        f"Non-authoritative synthetic wording {index}."
+        for index in range(1, len(fixture.accepted_obligations) + 1)
+    )
+    worker = MinimumLiveWorker(
+        repositories=runtime.repositories,
+        storage=runtime.storage,
+        analyst_factory=lambda _content: VariantStatementAnalyst(),
+        analyst_settings=AnalystSettings(),
+        max_source_bytes=10 * 1024 * 1024,
+        enable_synthetic_reconciliation=True,
+    )
+
+    result = worker.run(envelope)
+    stored = runtime.repositories.list_obligations(run.run_id)
+
+    assert result.state == "AWAITING_APPROVAL"
+    assert {item.statement for item in stored} == {
+        item.statement for item in fixture.accepted_obligations
+    }
+    assert not set(generated).intersection(item.statement for item in stored)
+
+
+@pytest.mark.parametrize(
+    "code",
+    [
+        AnalystCode.GEMINI_MALFORMED_OUTPUT,
+        AnalystCode.MODEL_ARMOR_OUTPUT_PROMPT_INJECTION_BLOCKED,
+    ],
+)
+def test_blocked_or_malformed_output_never_reaches_reconciliation(
+    code: AnalystCode,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime, run, envelope = seeded_runtime()
+
+    def unexpected_reconciliation(**_kwargs: object) -> None:
+        pytest.fail("blocked or malformed output reached fixture reconciliation")
+
+    monkeypatch.setattr(
+        worker_runtime,
+        "reconcile_minimum_live_candidates",
+        unexpected_reconciliation,
+    )
+    worker = MinimumLiveWorker(
+        repositories=runtime.repositories,
+        storage=runtime.storage,
+        analyst_factory=lambda _content: RejectOnceAnalyst(code),
+        analyst_settings=AnalystSettings(),
+        max_source_bytes=10 * 1024 * 1024,
+        enable_synthetic_reconciliation=True,
+    )
+
+    with pytest.raises(Exception, match=code.value):
+        worker.run(envelope)
+
+    failed = runtime.repositories.get_run(run.run_id)
+    assert failed.recovery is not None
+    assert failed.recovery.last_error_code == code.value
+    assert runtime.repositories.list_obligations(run.run_id) == []
+
+
+def test_three_actual_recovery_attempts_increment_once_and_preserve_all_identity() -> None:
+    runtime, run, envelope = seeded_runtime()
+    analyst = RejectOnceAnalyst(AnalystCode.GEMINI_REQUEST_REJECTED, failures=3)
+    worker = MinimumLiveWorker(
+        repositories=runtime.repositories,
+        storage=runtime.storage,
+        analyst_factory=lambda _content: analyst,
+        analyst_settings=AnalystSettings(),
+        max_source_bytes=10 * 1024 * 1024,
+    )
+    source_before = runtime.repositories.get_source_document(run.run_id)
+    regulation_before = runtime.repositories.get_regulation(run.regulation.reg_id)
+
+    for attempt in range(1, 4):
+        with pytest.raises(Exception, match="GEMINI_REQUEST_REJECTED"):
+            worker.run(envelope)
+        failed = runtime.repositories.get_run(run.run_id)
+        assert failed.recovery is not None
+        assert failed.recovery.attempt_count == attempt
+        events_before_duplicate = runtime.repositories.list_audit_events(run.run_id)
+        states = RunStateCoordinator(
+            runtime.repositories,
+            runtime.repositories,
+            runtime.repositories,
+            atomic=runtime.repositories,
+        )
+        worker._mark_recoverable(states, run.run_id, "GEMINI_REQUEST_REJECTED")
+        unchanged = runtime.repositories.get_run(run.run_id)
+        assert unchanged.recovery is not None
+        assert unchanged.recovery.attempt_count == attempt
+        assert runtime.repositories.list_audit_events(run.run_id) == events_before_duplicate
+        assert runtime.repositories.list_obligations(run.run_id) == []
+        assert runtime.repositories.list_findings(run.run_id) == []
+        assert runtime.repositories.list_actions(run.run_id) == []
+        assert runtime.repositories.list_approvals(run.run_id) == []
+
+    recovered = worker.run(envelope)
+
+    assert recovered.run_id == run.run_id and recovered.state == "AWAITING_APPROVAL"
+    assert analyst.calls == 4
+    assert runtime.repositories.get_source_document(run.run_id) == source_before
+    assert runtime.repositories.get_regulation(run.regulation.reg_id) == regulation_before
+    assert len(runtime.repositories.list_regulations_by_source("synthetic.pdf")) == 1
+    assert len(runtime.repositories.list_obligations(run.run_id)) == 3
+    assert len(runtime.repositories.list_findings(run.run_id)) == 1
+    assert len(runtime.repositories.list_actions(run.run_id)) == 1
+    assert len(runtime.repositories.list_approvals(run.run_id)) == 1
+    events = runtime.repositories.list_audit_events(run.run_id)
+    assert len({event.event_id for event in events}) == len(events)
+    events_before_final_duplicate = tuple(events)
+    duplicate = worker.run(envelope)
+    assert duplicate.duplicate_delivery
+    assert duplicate.finding_id == recovered.finding_id
+    assert duplicate.action_id == recovered.action_id
+    assert duplicate.approval_id == recovered.approval_id
+    assert tuple(runtime.repositories.list_audit_events(run.run_id)) == (
+        events_before_final_duplicate
+    )
 
 
 def test_firestore_worker_handoff_and_duplicate_delivery_are_atomic() -> None:

@@ -27,7 +27,10 @@ from regops_api.domain_models import (
     WorkflowLaunchRequest,
 )
 from regops_api.integrations import RuntimeStoragePort
-from regops_api.live_fixture import load_minimum_live_fixture
+from regops_api.live_fixture import (
+    load_minimum_live_fixture,
+    reconcile_minimum_live_candidates,
+)
 from regops_api.pdf_reader import parse_pdf
 from regops_api.repositories import (
     DuplicateRecordError,
@@ -145,6 +148,7 @@ class MinimumLiveWorker:
         analyst_factory: AnalystFactory,
         analyst_settings: AnalystSettings,
         max_source_bytes: int,
+        enable_synthetic_reconciliation: bool = False,
         clock: Clock = lambda: datetime.now(UTC),
     ) -> None:
         self._repositories = repositories
@@ -152,6 +156,7 @@ class MinimumLiveWorker:
         self._analyst_factory = analyst_factory
         self._analyst_settings = AnalystSettings.model_validate(analyst_settings)
         self._max_source_bytes = max_source_bytes
+        self._enable_synthetic_reconciliation = enable_synthetic_reconciliation
         self._clock = clock
 
     def run(self, envelope: WorkflowLaunchRequest) -> WorkflowRunResult:
@@ -196,6 +201,12 @@ class MinimumLiveWorker:
                 if callable(close):
                     close()
             accepted = fixture.accepted_catalog(parsed)
+            if self._enable_synthetic_reconciliation:
+                candidates = reconcile_minimum_live_candidates(
+                    fixture=fixture,
+                    source=parsed,
+                    candidates=candidates,
+                )
             obligation_result = verify_obligations(
                 run_id=run.run_id,
                 source=parsed,

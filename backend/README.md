@@ -94,6 +94,23 @@ verified placement-fee prohibition to one synthetic contract conflict. This mapp
 is deterministic backend policy, not Gemini or ADK output. Unknown hashes fail
 closed; the 37-finding evaluation fixtures are unchanged.
 
+For `minimum-live-slice-v1` only, the exact-hash analyst projection restricts source
+binding fields and evidence choices to the fixture's independently verified anchors,
+requires the explicit effective date/exceptions and the complete two-anchor evidence
+set, and leaves the model to select the correct set. A deterministic synthetic-demo
+reconciliation may replace only generated statement wording, and only when the
+candidate's complete normalized evidence set uniquely identifies one accepted
+obligation and every unchanged anchor, type, date and exception passes exact checks.
+Partial, ambiguous, duplicate, unknown or altered evidence is never reconciled.
+The general verifier is unchanged and remains authoritative. This path is enabled
+only by demo composition; arbitrary hashes and production mode cannot use it.
+
+Recovery attempt counts are derived from the run's append-only transitions into
+`FAILED_RECOVERABLE`, so each real failed recovery cycle increments once even though
+the public recovery object is cleared while a checkpoint is actively resumed. A
+duplicate failure handler observing an already-failed run does not add a transition
+or increment the count.
+
 Preview and revalidation run the same deterministic matcher on a shadow copy. The
 source contract remains immutable. Approval stores `APPROVED_DRAFT` and traverses
 `EXECUTING → REVALIDATING → COMPLETED`; rejection traverses directly to `COMPLETED`
@@ -191,9 +208,12 @@ The generation config uses JSON MIME and a small inline provider schema. A live
 incremental probe showed that the complete nested Pydantic schema is rejected for
 schema complexity: restoring the outer obligation array's `minItems: 1` and
 `maxItems: 50` to the otherwise accepted projection reproduces HTTP 400. The request
-therefore omits only that provider-side cardinality pair and other redundant schema
-detail. The response remains bounded by token/byte/character limits and must still
-pass the unchanged, strict `AnalystDraftOutput` model (including the 1..50 obligation
+therefore omits that provider-side outer cardinality pair and redundant schema
+detail. For the exact known-hash fixture only, the projection also requires its
+source binding, fixed document kind, accepted quotation choices, complete evidence
+cardinality, effective date and exceptions. The response remains bounded by
+token/byte/character limits and must still pass the unchanged, strict
+`AnalystDraftOutput` model (including the 1..50 obligation
 bound, extra-field rejection, identifiers, lengths and patterns) and deterministic
 verifier. The versioned prompt is packaged in the wheel.
 
@@ -207,7 +227,8 @@ verification. Inspecting opaque transport/provider metadata is not a content-sec
 boundary: one live response was blocked only in its raw wrapper while its decoded
 text was allowed. A separate live generation produced decoded text that was itself
 prompt-injection-blocked; that block remains authoritative. The v2 system prompt
-requires neutral declarative candidate fields and shortest supporting quotations,
+was advanced to v3 to require neutral declarative candidate fields, complete source
+bindings, explicit date/exception fields and exact, non-paraphrased quotations,
 and the provider projection now bounds generated strings and obligation/document
 types to reduce unsupported prompt-like material. Missing/empty/truncated, non-object,
 schema-invalid, refusal and tool-call outputs fail without partial candidates.
@@ -272,6 +293,13 @@ scope and is discarded after inspection. The test emits only fixed raw/decoded
 `ArmorOutcome` categories and bounded candidate/text-part counts; it never emits or
 retains provider payloads, model text or thought signatures. A blocked decoded-text
 outcome is a successful security diagnosis, not an accepted candidate.
+
+The verifier diagnostic is separately opt-in through
+`REGOPS_LIVE_OBLIGATION_DIAGNOSTIC=1`. It runs the tracked PDF through the complete
+current analyst and `verify_obligations`, retains response/candidate data only inside
+the sensitive-I/O scope, and emits only candidate/catalog counts, fixed issue-code
+counts, fixed mismatch-category counts and unique-complete-evidence counts. It never
+prints or logs model prose, quotations, signatures, payloads or authorization data.
 
 ### Reproducing dependency locks (Python 3.12, PowerShell)
 

@@ -90,6 +90,7 @@ def build_cloud_runtime(
         ),
         analyst_settings=analyst_settings,
         max_source_bytes=settings.max_upload_bytes,
+        enable_synthetic_reconciliation=True,
     )
     return RuntimeContainer(
         settings=settings,

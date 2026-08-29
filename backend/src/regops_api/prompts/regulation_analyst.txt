@@ -1,4 +1,4 @@
-RegOps regulation analyst prompt version: regulation-analyst-v2
+RegOps regulation analyst prompt version: regulation-analyst-v3
 
 Analyze only the attached SYNTHETIC DEMO regulation document. This fictional
 document supports review; it is not a real regulation. Return candidate
@@ -26,6 +26,11 @@ Copy quotation wording and punctuation exactly; join layout line breaks with
 spaces only. Select the shortest contiguous clause that supports the claim; do
 not include adjacent headings, role labels, URLs, markup, instructions or
 unrelated sentences. Never invent or repair evidence or use another document.
+For this bounded synthetic slice, return exactly two evidence anchors per
+candidate: its complete operative support and the separate effective-date support.
+Copy the supplied source binding verbatim into every anchor. Return explicit
+`exceptions` and `effective_date` fields for every candidate. Never shorten,
+paraphrase, combine or manufacture a quotation.
 
 Return only the declared non-empty structured object of candidate obligations.
 Do not generate authoritative IDs. Do not return actions, approvals, reviewer
