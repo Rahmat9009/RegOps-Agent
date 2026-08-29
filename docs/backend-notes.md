@@ -1,6 +1,42 @@
 # Backend contract notes
 
-## 2026-08-29 — minimum-live obligation reconciliation (no contract change)
+## 2026-08-29 — bounded synthetic live obligation detection (no contract change)
+
+The frozen contract and frontend remain unchanged. The hosted minimum-live
+demonstration no longer asks Gemini to construct interdependent obligation fields.
+For `REGOPS_MODE=demo`, `minimum-live-slice-v1`, source SHA-256
+`6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9`,
+the fixture document identity and the explicit minimum-live worker composition,
+Gemini 3.5 Flash receives inspected PDF page text and returns only these required
+booleans: `placement_fee_prohibition`, `fee_schedule_reissue`, and
+`employer_paid_medical_exception`. Extra, missing, non-boolean, malformed, blocked
+or false output fails closed. Detection is preselected before generation, makes one
+Gemini call per delivery and has no general-extraction fallback or retry-until-true
+behavior.
+
+After all three detections are true, trusted backend code resolves the fixed keys to
+immutable synthetic ground-truth `AcceptedObligation` records. The unchanged
+`verify_obligations` gate then independently checks exact document identity, source
+digest, page and quotation presence against the parsed PDF. Only its canonical
+verified output can persist. The booleans are not authoritative evidence and are not
+persisted. Gemini does not author stored IDs, canonical statements, evidence,
+actions or approvals. The general candidate-producing analyst remains implemented
+and tested for non-fixture sources, but the exact-hash hosted demonstration does not
+use it and must not be described as unrestricted regulatory extraction.
+
+The content-free compatibility test is opt-in through
+`REGOPS_LIVE_DETECTION_DIAGNOSTIC=1`; default tests cannot reach ADC or the network.
+It may report only request status, a fixed Armor category, schema status, three
+booleans, verifier acceptance and bounded counts. No live result is claimed here
+unless the diagnostic is actually run during this change. It was run once with
+ADC/Vertex Enterprise, Gemini 3.5 Flash and the existing Model Armor templates:
+the request succeeded, Armor returned `allowed`, the strict schema parsed all three
+booleans as true, and the unchanged verifier accepted three of three resolved
+candidates. No source text, quotation, provider payload, thought signature,
+credential or token was emitted. The worker run was not retried and nothing was
+deployed.
+
+## 2026-08-29 — superseded free-form obligation reconciliation (no contract change)
 
 The frozen contract and frontend remain unchanged. One opt-in ADC/Vertex Enterprise
 diagnostic ran the exact tracked synthetic PDF through the current input Armor gate,

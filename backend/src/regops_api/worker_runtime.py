@@ -14,6 +14,7 @@ from pydantic import Field
 from regops_api.action_policy import ActionPolicy
 from regops_api.analyst_errors import AnalystError
 from regops_api.analyst_settings import AnalystSettings
+from regops_api.config import RuntimeMode
 from regops_api.domain_models import (
     ActionRecord,
     AuditEvent,
@@ -28,8 +29,10 @@ from regops_api.domain_models import (
 )
 from regops_api.integrations import RuntimeStoragePort
 from regops_api.live_fixture import (
+    KNOWN_SOURCE_SHA256,
+    MINIMUM_LIVE_FIXTURE_VERSION,
     load_minimum_live_fixture,
-    reconcile_minimum_live_candidates,
+    resolve_minimum_live_detections,
 )
 from regops_api.pdf_reader import parse_pdf
 from regops_api.repositories import (
@@ -59,6 +62,8 @@ from regops_api.verification import FindingVerifier, verify_obligations
 from regops_api.worker_ids import canonical_bytes
 from regops_api.worker_models import (
     InvestigatorDraftOutput,
+    MinimumLiveDetection,
+    SourceDocument,
     VerifiedFinding,
     VerifiedObligation,
     VerifiedWorkerOutput,
@@ -71,6 +76,14 @@ Clock = Callable[[], datetime]
 
 class AnalystFactory(Protocol):
     def __call__(self, content: bytes) -> CandidateAnalyst: ...
+
+
+class FixtureDetector(Protocol):
+    def detect(self, *, source: SourceDocument) -> MinimumLiveDetection: ...
+
+
+class FixtureDetectorFactory(Protocol):
+    def __call__(self, content: bytes) -> FixtureDetector: ...
 
 
 class WorkflowRunResult(WorkerModel):
@@ -148,7 +161,8 @@ class MinimumLiveWorker:
         analyst_factory: AnalystFactory,
         analyst_settings: AnalystSettings,
         max_source_bytes: int,
-        enable_synthetic_reconciliation: bool = False,
+        fixture_detector_factory: FixtureDetectorFactory | None = None,
+        runtime_mode: RuntimeMode = RuntimeMode.TEST,
         clock: Clock = lambda: datetime.now(UTC),
     ) -> None:
         self._repositories = repositories
@@ -156,7 +170,10 @@ class MinimumLiveWorker:
         self._analyst_factory = analyst_factory
         self._analyst_settings = AnalystSettings.model_validate(analyst_settings)
         self._max_source_bytes = max_source_bytes
-        self._enable_synthetic_reconciliation = enable_synthetic_reconciliation
+        self._fixture_detector_factory = fixture_detector_factory
+        self._runtime_mode = runtime_mode
+        if fixture_detector_factory is not None and runtime_mode is not RuntimeMode.DEMO:
+            raise ValueError("FIXTURE_DETECTION_REQUIRES_DEMO_MODE")
         self._clock = clock
 
     def run(self, envelope: WorkflowLaunchRequest) -> WorkflowRunResult:
@@ -193,20 +210,39 @@ class MinimumLiveWorker:
                 source_sha256=source.source_sha256,
                 limits=self._analyst_settings.pdf,
             )
-            analyst = self._analyst_factory(content)
-            try:
-                candidates = analyst.analyze(source=parsed)
-            finally:
-                close = getattr(analyst, "close", None)
-                if callable(close):
-                    close()
             accepted = fixture.accepted_catalog(parsed)
-            if self._enable_synthetic_reconciliation:
-                candidates = reconcile_minimum_live_candidates(
-                    fixture=fixture,
-                    source=parsed,
-                    candidates=candidates,
-                )
+            if self._fixture_detector_factory is not None:
+                if (
+                    self._runtime_mode is not RuntimeMode.DEMO
+                    or fixture.fixture_version != MINIMUM_LIVE_FIXTURE_VERSION
+                    or not compare_digest(source.source_sha256, KNOWN_SOURCE_SHA256)
+                    or not compare_digest(parsed.identity.source_sha256, KNOWN_SOURCE_SHA256)
+                    or parsed.identity.doc_id != fixture.source_doc_id
+                ):
+                    raise WorkerExecutionError("FIXTURE_DETECTION_BOUNDARY_REJECTED")
+                detector = self._fixture_detector_factory(content)
+                try:
+                    detections = detector.detect(source=parsed)
+                finally:
+                    close = getattr(detector, "close", None)
+                    if callable(close):
+                        close()
+                try:
+                    candidates = resolve_minimum_live_detections(
+                        fixture=fixture,
+                        source=parsed,
+                        detections=detections,
+                    )
+                except ValueError:
+                    raise WorkerExecutionError("FIXTURE_DETECTION_REJECTED") from None
+            else:
+                analyst = self._analyst_factory(content)
+                try:
+                    candidates = analyst.analyze(source=parsed)
+                finally:
+                    close = getattr(analyst, "close", None)
+                    if callable(close):
+                        close()
             obligation_result = verify_obligations(
                 run_id=run.run_id,
                 source=parsed,

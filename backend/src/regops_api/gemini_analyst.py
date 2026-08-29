@@ -24,7 +24,7 @@ from regops_api.adapter_logging import sensitive_io
 from regops_api.analyst_errors import AnalystCode, AnalystError
 from regops_api.analyst_settings import AnalystSettings
 from regops_api.config import RuntimeSettings
-from regops_api.live_fixture import MinimumLiveFixture, load_minimum_live_fixture
+from regops_api.live_fixture import MINIMUM_LIVE_FIXTURE_VERSION, load_minimum_live_fixture
 from regops_api.model_armor import (
     ArmorOutcome,
     ArmorResult,
@@ -33,7 +33,7 @@ from regops_api.model_armor import (
     TextInspection,
 )
 from regops_api.pdf_reader import parse_pdf
-from regops_api.worker_models import AnalystDraftOutput, SourceDocument
+from regops_api.worker_models import AnalystDraftOutput, MinimumLiveDetection, SourceDocument
 
 T = TypeVar("T")
 
@@ -56,6 +56,14 @@ def analyst_prompt() -> str:
     )
 
 
+def minimum_live_detection_prompt() -> str:
+    return (
+        files("regops_api")
+        .joinpath("prompts/minimum_live_detector.txt")
+        .read_text(encoding="utf-8")
+    )
+
+
 def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     result: dict[str, Any] = {}
     for key, value in pairs:
@@ -75,9 +83,7 @@ def _json_object(text: str) -> dict[str, Any]:
     return value
 
 
-def _provider_response_schema(
-    fixture: MinimumLiveFixture | None = None,
-) -> dict[str, Any]:
+def _provider_response_schema() -> dict[str, Any]:
     """Return a bounded inline hint below Vertex's structured-schema complexity limit.
 
     Pydantic remains the authoritative parser, including extra-field, string-length,
@@ -90,71 +96,27 @@ def _provider_response_schema(
         "page": {"type": "integer"},
         "quote": {"type": "string", "maxLength": 300},
     }
-    evidence_min, evidence_max = 1, 5
-    if fixture is not None:
-        anchors = tuple(
-            anchor
-            for obligation in fixture.accepted_obligations
-            for anchor in obligation.evidence
-        )
-        evidence_properties.update(
-            {
-                "doc_id": {"type": "string", "enum": [fixture.source_doc_id]},
-                "source_sha256": {"type": "string", "enum": [fixture.source_sha256]},
-                "page": {"type": "integer", "enum": sorted({a.page for a in anchors})},
-                "quote": {
-                    "type": "string",
-                    "enum": sorted({a.quote for a in anchors}),
-                },
-            }
-        )
-        evidence_counts = {len(item.evidence) for item in fixture.accepted_obligations}
-        if len(evidence_counts) == 1:
-            evidence_min = evidence_max = evidence_counts.pop()
     evidence = {
         "type": "object",
         "properties": evidence_properties,
         "required": ["doc_id", "doc_kind", "source_sha256", "page", "quote"],
     }
-    obligation_properties: dict[str, Any] = {
-        "statement": {"type": "string", "maxLength": 1000},
-        "type": {
-            "type": "string",
-            "enum": ["prohibition", "requirement", "limit", "exception"],
-        },
-        "evidence": {
-            "type": "array",
-            "items": evidence,
-            "minItems": evidence_min,
-            "maxItems": evidence_max,
-        },
-    }
-    required = ["statement", "type", "evidence"]
-    if fixture is not None:
-        obligation_properties.update(
-            {
-                "exceptions": {
-                    "type": "array",
-                    "items": {"type": "string", "maxLength": 500},
-                    "maxItems": 10,
-                },
-                "effective_date": {
-                    "type": "string",
-                    "enum": sorted(
-                        {
-                            item.effective_date.isoformat()
-                            for item in fixture.accepted_obligations
-                            if item.effective_date is not None
-                        }
-                    ),
-                },
-            }
-        )
-        required.extend(["exceptions", "effective_date"])
     obligation = {
         "type": "object",
-        "properties": obligation_properties,
-        "required": required,
+        "properties": {
+            "statement": {"type": "string", "maxLength": 1000},
+            "type": {
+                "type": "string",
+                "enum": ["prohibition", "requirement", "limit", "exception"],
+            },
+            "evidence": {
+                "type": "array",
+                "items": evidence,
+                "minItems": 1,
+                "maxItems": 5,
+            },
+        },
+        "required": ["statement", "type", "evidence"],
     }
     return {
         "type": "object",
@@ -165,6 +127,20 @@ def _provider_response_schema(
             }
         },
         "required": ["obligations"],
+    }
+
+
+def _minimum_live_detection_schema() -> dict[str, Any]:
+    properties = {
+        "placement_fee_prohibition": {"type": "boolean"},
+        "fee_schedule_reissue": {"type": "boolean"},
+        "employer_paid_medical_exception": {"type": "boolean"},
+    }
+    return {
+        "type": "object",
+        "properties": properties,
+        "required": list(properties),
+        "additionalProperties": False,
     }
 
 
@@ -263,6 +239,8 @@ class GeminiRegulationAnalyst:
         input_inspector: TextInspection,
         output_inspector: TextInspection,
         response_json_schema: dict[str, Any] | None = None,
+        system_instruction: str | None = None,
+        generation_attempts: int | None = None,
         clock: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], None] = time.sleep,
         jitter: Callable[[], float] = random.random,
@@ -273,6 +251,8 @@ class GeminiRegulationAnalyst:
         self._input = input_inspector
         self._output = output_inspector
         self._response_json_schema = response_json_schema or _provider_response_schema()
+        self._system_instruction = system_instruction or analyst_prompt()
+        self._generation_attempts = generation_attempts or self._settings.max_attempts
         self._clock, self._sleep, self._jitter = clock, sleep, jitter
         self._close_clients: Callable[[], None] = lambda: None
 
@@ -282,9 +262,16 @@ class GeminiRegulationAnalyst:
             self._close_clients()
 
     def _retry(
-        self, call: Callable[[float], T], *, deadline: float, timeout: float, expired: AnalystCode
+        self,
+        call: Callable[[float], T],
+        *,
+        deadline: float,
+        timeout: float,
+        expired: AnalystCode,
+        attempts: int | None = None,
     ) -> T:
-        for attempt in range(self._settings.max_attempts):
+        attempt_limit = attempts or self._settings.max_attempts
+        for attempt in range(attempt_limit):
             remaining = deadline - self._clock()
             if remaining <= 0:
                 raise AnalystError(expired)
@@ -298,7 +285,7 @@ class GeminiRegulationAnalyst:
                 retry_after = error.retry_after_seconds
             # Raise outside the exception handler so raw exception context cannot
             # survive in a retained sanitized failure.
-            if not transient or attempt + 1 >= self._settings.max_attempts:
+            if not transient or attempt + 1 >= attempt_limit:
                 raise AnalystError(code)
             delay = max(min(2**attempt * self._jitter(), 4.0), retry_after)
             if self._clock() + delay >= deadline:
@@ -355,7 +342,7 @@ class GeminiRegulationAnalyst:
     def _generate(self, source: SourceDocument, timeout: float) -> str:
         retry_after = 0.0
         config = types.GenerateContentConfig(
-            system_instruction=analyst_prompt(),
+            system_instruction=self._system_instruction,
             candidate_count=1,
             max_output_tokens=self._settings.max_output_tokens,
             response_mime_type="application/json",
@@ -434,7 +421,7 @@ class GeminiRegulationAnalyst:
             code = AnalystCode.GEMINI_MALFORMED_OUTPUT
         raise AnalystError(code, retry_after_seconds=retry_after)
 
-    def analyze(self, *, source: SourceDocument) -> AnalystDraftOutput:
+    def _analyze_text(self, *, source: SourceDocument) -> str:
         deadline = self._clock() + self._settings.stage_timeout_seconds
         try:
             source = SourceDocument.model_validate(source)
@@ -455,6 +442,7 @@ class GeminiRegulationAnalyst:
             deadline=deadline,
             timeout=self._settings.timeout_seconds,
             expired=AnalystCode.GEMINI_TIMEOUT,
+            attempts=self._generation_attempts,
         )
         # Structurally validate the provider envelope ourselves; the SDK still cannot
         # parse candidate JSON ahead of this boundary. Provider wrapper metadata is not
@@ -472,24 +460,50 @@ class GeminiRegulationAnalyst:
         # JSON decoding has exposed escaped text. Armor sees only the complete decoded
         # model text and still runs before Pydantic or deterministic domain verification.
         self._inspect(decoded.text, "output", deadline)
+        return decoded.text
+
+    def analyze(self, *, source: SourceDocument) -> AnalystDraftOutput:
+        text = self._analyze_text(source=source)
         try:
             # Also reject duplicate keys and NaN, not just schema violations.
-            _json_object(decoded.text)
-            return AnalystDraftOutput.model_validate_json(decoded.text)
+            _json_object(text)
+            return AnalystDraftOutput.model_validate_json(text)
         except (ValueError, ValidationError, RecursionError):
             pass
         raise AnalystError(AnalystCode.GEMINI_MALFORMED_OUTPUT)
 
 
-def build_demo_analyst(
-    *, content: bytes, runtime: RuntimeSettings, settings: AnalystSettings
+class GeminiMinimumLiveDetector(GeminiRegulationAnalyst):
+    """Guarded boolean-only detector for the immutable minimum-live fixture."""
+
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(
+            **kwargs,
+            response_json_schema=_minimum_live_detection_schema(),
+            system_instruction=minimum_live_detection_prompt(),
+            generation_attempts=1,
+        )
+
+    def detect(self, *, source: SourceDocument) -> MinimumLiveDetection:
+        text = self._analyze_text(source=source)
+        try:
+            _json_object(text)
+            result = MinimumLiveDetection.model_validate_json(text)
+        except (ValueError, ValidationError, RecursionError):
+            raise AnalystError(AnalystCode.GEMINI_MALFORMED_OUTPUT) from None
+        if not all(result.model_dump().values()):
+            raise AnalystError(AnalystCode.FIXTURE_DETECTION_REJECTED)
+        return result
+
+
+def _build_demo_adapter(
+    *,
+    content: bytes,
+    runtime: RuntimeSettings,
+    settings: AnalystSettings,
+    detector: bool,
 ) -> GeminiRegulationAnalyst:
-    """Explicit cloud construction only; no test/production/Developer API fallback."""
     settings.validate_demo(runtime)
-    try:
-        fixture = load_minimum_live_fixture(sha256(content).hexdigest())
-    except ValueError:
-        fixture = None
     with sensitive_io():
         try:
             with ExitStack() as clients:
@@ -516,16 +530,53 @@ def build_demo_analyst(
                     input_template=settings.armor_input_template,
                     output_template=settings.armor_output_template,
                 )
-                analyst = GeminiRegulationAnalyst(
+                adapter_type = (
+                    GeminiMinimumLiveDetector if detector else GeminiRegulationAnalyst
+                )
+                analyst = adapter_type(
                     content=content,
                     settings=settings,
                     client=gemini.models,
                     input_inspector=armor,
                     output_inspector=armor,
-                    response_json_schema=_provider_response_schema(fixture),
                 )
                 analyst._close_clients = clients.pop_all().close
                 return analyst
         except Exception:
             pass
     raise AnalystError(AnalystCode.ANALYST_CONFIGURATION_INVALID)
+
+
+def build_demo_analyst(
+    *, content: bytes, runtime: RuntimeSettings, settings: AnalystSettings
+) -> GeminiRegulationAnalyst:
+    """Construct the general candidate analyst; it has no fixture-key behavior."""
+    return _build_demo_adapter(
+        content=content,
+        runtime=runtime,
+        settings=settings,
+        detector=False,
+    )
+
+
+def build_demo_detector(
+    *, content: bytes, runtime: RuntimeSettings, settings: AnalystSettings
+) -> GeminiMinimumLiveDetector:
+    """Construct the exact-hash demo detector without a general-analysis fallback."""
+    settings.validate_demo(runtime)
+    try:
+        fixture = load_minimum_live_fixture(sha256(content).hexdigest())
+    except ValueError:
+        raise AnalystError(AnalystCode.ANALYST_CONFIGURATION_INVALID) from None
+    if fixture.fixture_version != MINIMUM_LIVE_FIXTURE_VERSION:
+        raise AnalystError(AnalystCode.ANALYST_CONFIGURATION_INVALID)
+    adapter = _build_demo_adapter(
+        content=content,
+        runtime=runtime,
+        settings=settings,
+        detector=True,
+    )
+    if not isinstance(adapter, GeminiMinimumLiveDetector):
+        adapter.close()
+        raise AnalystError(AnalystCode.ANALYST_CONFIGURATION_INVALID)
+    return adapter

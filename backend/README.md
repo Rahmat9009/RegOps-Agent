@@ -88,22 +88,25 @@ remains liveness. CORS is an exact-origin browser policy and is not authenticati
 
 The worker reads only the persisted run object, enforces the PDF byte limit and exact
 lowercase SHA-256, and invokes the bounded parser and Model Armor-guarded Gemini
-analyst. A package fixture accepts only source hash
+detector. A package fixture accepts only source hash
 `6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9` and maps one
 verified placement-fee prohibition to one synthetic contract conflict. This mapping
 is deterministic backend policy, not Gemini or ADK output. Unknown hashes fail
 closed; the 37-finding evaluation fixtures are unchanged.
 
-For `minimum-live-slice-v1` only, the exact-hash analyst projection restricts source
-binding fields and evidence choices to the fixture's independently verified anchors,
-requires the explicit effective date/exceptions and the complete two-anchor evidence
-set, and leaves the model to select the correct set. A deterministic synthetic-demo
-reconciliation may replace only generated statement wording, and only when the
-candidate's complete normalized evidence set uniquely identifies one accepted
-obligation and every unchanged anchor, type, date and exception passes exact checks.
-Partial, ambiguous, duplicate, unknown or altered evidence is never reconciled.
-The general verifier is unchanged and remains authoritative. This path is enabled
-only by demo composition; arbitrary hashes and production mode cannot use it.
+For `minimum-live-slice-v1` only, explicit demo composition preselects a constrained
+Gemini 3.5 Flash request with exactly three required boolean fixture keys. It asks
+only whether the exact synthetic regulation contains the fixed placement-fee,
+fee-schedule and employer-paid-medical concepts. The model cannot return statements,
+quotations, dates or identifiers through this schema. All three detections must be
+true; missing, false, non-boolean, malformed, blocked or extra output fails closed
+without another Gemini call. The backend then resolves the keys to immutable
+synthetic ground-truth records and runs the unchanged `verify_obligations` gate,
+which independently confirms every document binding, digest, page and exact
+quotation against the parsed PDF. Only canonical verified output may persist.
+Gemini is not authoritative for IDs, canonical wording, evidence, actions or
+approvals. Unknown hashes and production mode cannot enter this path; there is no
+fallback from general extraction to fixture detection.
 
 Recovery attempt counts are derived from the run's append-only transitions into
 `FAILED_RECOVERABLE`, so each real failed recovery cycle increments once even though
@@ -137,9 +140,10 @@ and requires no Google credentials. An optional test marked `firestore_emulator`
 runs only when `FIRESTORE_EMULATOR_HOST` is configured.
 
 Run locally with `.venv\Scripts\regops-api` or build `Dockerfile` for Cloud Run.
-Phase 1 remains a single-process service. Gemini is wired only into the exact-hash
-minimum slice. ADK remains implemented and tested but is not invoked in that runtime
-path. Cloud resource provisioning is deferred.
+Phase 1 remains a single-process service. The hosted exact-hash minimum slice uses
+Gemini only for fixed obligation detection. The general candidate-producing analyst
+and ADK path remain implemented and tested but are not invoked by this hosted demo
+composition. Cloud resource provisioning is deferred.
 Cloud Run Jobs and Pub/Sub begin in Phase 2.
 
 ## Phase 1B.2B: guarded candidate extraction
@@ -204,18 +208,23 @@ cached corpus and no thought output. Gemini 3.5 sampling parameters (`temperatur
 from the system instruction, structured output and the verifier. `REGOPS_GEMINI_MODEL`
 defaults to `gemini-3.5-flash`.
 
-The generation config uses JSON MIME and a small inline provider schema. A live
+The general analyst generation config uses JSON MIME and a small inline provider schema. A live
 incremental probe showed that the complete nested Pydantic schema is rejected for
 schema complexity: restoring the outer obligation array's `minItems: 1` and
 `maxItems: 50` to the otherwise accepted projection reproduces HTTP 400. The request
 therefore omits that provider-side outer cardinality pair and redundant schema
-detail. For the exact known-hash fixture only, the projection also requires its
-source binding, fixed document kind, accepted quotation choices, complete evidence
-cardinality, effective date and exceptions. The response remains bounded by
+detail. The response remains bounded by
 token/byte/character limits and must still pass the unchanged, strict
 `AnalystDraftOutput` model (including the 1..50 obligation
 bound, extra-field rejection, identifiers, lengths and patterns) and deterministic
-verifier. The versioned prompt is packaged in the wheel.
+verifier. Its versioned prompt is packaged in the wheel.
+
+The hosted minimum-live detector has a separate packaged instruction and a strict
+three-boolean schema with no free-form fields. It preserves one candidate, JSON MIME,
+`thinking_level=MINIMAL`, `include_thoughts=False`, disabled tools/function calls,
+raw-envelope decoding, both Armor gates and the existing byte/token/time limits.
+Unlike transient retries retained by the general analyst, detection makes exactly
+one Gemini generation call per worker delivery and never retries until a key is true.
 
 `should_return_http_response=True` prevents the SDK from parsing model JSON before
 the application-controlled boundary. The adapter structurally decodes that bounded
@@ -241,10 +250,11 @@ field fails closed. Confirmed output blocks use fixed category-specific internal
 codes for prompt injection, sensitive data or unsafe content; no matched content or
 provider diagnostic enters recovery records.
 
-`build_demo_analyst` requires `REGOPS_MODE=demo`, `GOOGLE_CLOUD_PROJECT`,
+`build_demo_analyst` and `build_demo_detector` require `REGOPS_MODE=demo`, `GOOGLE_CLOUD_PROJECT`,
 `REGOPS_ARMOR_LOCATION`, `REGOPS_GEMINI_LOCATION`,
 `REGOPS_ARMOR_INPUT_TEMPLATE` and `REGOPS_ARMOR_OUTPUT_TEMPLATE`.
-Template names must belong to the configured project and Armor location. Call `close()`
+The detector factory additionally requires the exact known PDF hash and fixture
+version. Template names must belong to the configured project and Armor location. Call `close()`
 to release factory-owned clients. Tests inject fakes directly. Production remains
 unavailable; missing Armor configuration, raw API keys, alternate SDK endpoints
 and enabled message capture are rejected. Nothing silently falls back to the
@@ -294,12 +304,13 @@ scope and is discarded after inspection. The test emits only fixed raw/decoded
 retains provider payloads, model text or thought signatures. A blocked decoded-text
 outcome is a successful security diagnosis, not an accepted candidate.
 
-The verifier diagnostic is separately opt-in through
-`REGOPS_LIVE_OBLIGATION_DIAGNOSTIC=1`. It runs the tracked PDF through the complete
-current analyst and `verify_obligations`, retains response/candidate data only inside
-the sensitive-I/O scope, and emits only candidate/catalog counts, fixed issue-code
-counts, fixed mismatch-category counts and unique-complete-evidence counts. It never
-prints or logs model prose, quotations, signatures, payloads or authorization data.
+The minimum-live compatibility diagnostic is separately opt-in through
+`REGOPS_LIVE_DETECTION_DIAGNOSTIC=1`. It uses the tracked PDF, Gemini 3.5 Flash,
+ADC/Vertex Enterprise and the existing input/output Armor templates. It emits only
+request success, a fixed Armor category, schema-parse status, the three booleans,
+verifier acceptance and candidate/verified counts. Source text, quotations,
+provider payloads, thought signatures and authorization material remain inside the
+sensitive-I/O scope and are discarded. It is excluded from the default suite.
 
 ### Reproducing dependency locks (Python 3.12, PowerShell)
 

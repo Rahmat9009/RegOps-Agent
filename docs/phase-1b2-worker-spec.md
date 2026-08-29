@@ -278,6 +278,16 @@ than trusted.
 
 ## 5. Gemini Regulation Analyst boundary
 
+The hosted `minimum-live-slice-v1` demo is a narrower implementation profile than
+the general analyst below. Explicit demo composition, the exact known source hash
+and fixture document identity preselect a three-boolean Gemini detection request.
+Trusted backend code resolves true fixture keys to immutable accepted records, and
+the unchanged verifier independently validates every quotation against the parsed
+PDF. The hosted profile does not accept model-authored statements, evidence, dates
+or identifiers and has no fallback from rejected general extraction. The general
+candidate-producing analyst remains the path for non-fixture sources and is not used
+by the exact-hash hosted demonstration.
+
 ### Adapter contract
 
 `GeminiRegulationAnalyst` uses the official `google-genai` Python SDK with Vertex AI and a

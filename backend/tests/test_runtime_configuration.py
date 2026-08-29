@@ -62,6 +62,9 @@ def test_demo_mode_builds_persistent_adapters_with_backend_reviewer(
 
     assert isinstance(runtime.repositories, FirestoreRepositories)
     assert runtime.reviewer_identity.reviewer_id() == "demo-reviewer"
+    assert runtime.worker is not None
+    assert runtime.worker._fixture_detector_factory is not None
+    assert runtime.worker._runtime_mode is RuntimeMode.DEMO
 
 
 def test_firestore_serialization_round_trips_strict_models_and_layout_is_stable() -> None:

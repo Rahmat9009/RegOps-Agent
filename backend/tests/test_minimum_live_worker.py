@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from regops_api import worker_runtime
 from regops_api.analyst_errors import AnalystCode, AnalystError
 from regops_api.analyst_settings import AnalystSettings
+from regops_api.config import RuntimeMode
 from regops_api.domain_models import (
     RegulationRecord,
     RunCheckpoint,
@@ -43,7 +44,12 @@ from regops_api.schemas import (
     RunState,
 )
 from regops_api.state_machine import RunStateCoordinator
-from regops_api.worker_models import AnalystDraftOutput, CandidateObligation, SourceDocument
+from regops_api.worker_models import (
+    AnalystDraftOutput,
+    CandidateObligation,
+    MinimumLiveDetection,
+    SourceDocument,
+)
 from regops_api.worker_runtime import MinimumLiveWorker
 from tests.factories import NOW, make_obligation, make_run
 from tests.runtime_helpers import RecordingWorkflow, make_runtime
@@ -119,17 +125,27 @@ class RejectOnceAnalyst(FixtureAnalyst):
         return super().analyze(source=source)
 
 
-class VariantStatementAnalyst(FixtureAnalyst):
-    def analyze(self, *, source: SourceDocument) -> AnalystDraftOutput:
-        output = super().analyze(source=source)
-        return AnalystDraftOutput(
-            obligations=tuple(
-                item.model_copy(
-                    update={"statement": f"Non-authoritative synthetic wording {index}."}
-                )
-                for index, item in enumerate(output.obligations, start=1)
-            )
+class FixtureDetector:
+    def __init__(
+        self,
+        *,
+        failures: tuple[AnalystCode, ...] = (),
+        detections: MinimumLiveDetection | None = None,
+    ) -> None:
+        self.calls = 0
+        self.failures = failures
+        self.detections = detections or MinimumLiveDetection(
+            placement_fee_prohibition=True,
+            fee_schedule_reissue=True,
+            employer_paid_medical_exception=True,
         )
+
+    def detect(self, *, source: SourceDocument) -> MinimumLiveDetection:
+        assert source.identity.source_sha256 == KNOWN_SOURCE_SHA256
+        self.calls += 1
+        if self.calls <= len(self.failures):
+            raise AnalystError(self.failures[self.calls - 1])
+        return self.detections
 
 
 class Identity:
@@ -393,20 +409,23 @@ def test_original_envelope_resumes_analyst_failure_without_duplicate_records(
     assert tuple(runtime.repositories.list_audit_events(run.run_id)) == events_before_duplicate
 
 
-def test_statement_variants_persist_only_canonical_fixture_wording() -> None:
+def test_exact_fixture_uses_detection_and_persists_only_fixture_records() -> None:
     runtime, run, envelope = seeded_runtime()
     fixture = load_minimum_live_fixture(KNOWN_SOURCE_SHA256)
-    generated = tuple(
-        f"Non-authoritative synthetic wording {index}."
-        for index in range(1, len(fixture.accepted_obligations) + 1)
-    )
+    detector = FixtureDetector()
+
+    def unexpected_analyst(content: bytes) -> FixtureAnalyst:
+        assert content
+        pytest.fail("exact demo detection fell back to general analysis")
+
     worker = MinimumLiveWorker(
         repositories=runtime.repositories,
         storage=runtime.storage,
-        analyst_factory=lambda _content: VariantStatementAnalyst(),
+        analyst_factory=unexpected_analyst,
         analyst_settings=AnalystSettings(),
         max_source_bytes=10 * 1024 * 1024,
-        enable_synthetic_reconciliation=True,
+        fixture_detector_factory=lambda _content: detector,
+        runtime_mode=RuntimeMode.DEMO,
     )
 
     result = worker.run(envelope)
@@ -416,7 +435,10 @@ def test_statement_variants_persist_only_canonical_fixture_wording() -> None:
     assert {item.statement for item in stored} == {
         item.statement for item in fixture.accepted_obligations
     }
-    assert not set(generated).intersection(item.statement for item in stored)
+    assert detector.calls == 1
+
+    duplicate = worker.run(envelope)
+    assert duplicate.duplicate_delivery and detector.calls == 1
 
 
 @pytest.mark.parametrize(
@@ -426,27 +448,29 @@ def test_statement_variants_persist_only_canonical_fixture_wording() -> None:
         AnalystCode.MODEL_ARMOR_OUTPUT_PROMPT_INJECTION_BLOCKED,
     ],
 )
-def test_blocked_or_malformed_output_never_reaches_reconciliation(
+def test_blocked_or_malformed_detection_never_reaches_resolution(
     code: AnalystCode,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     runtime, run, envelope = seeded_runtime()
 
-    def unexpected_reconciliation(**_kwargs: object) -> None:
-        pytest.fail("blocked or malformed output reached fixture reconciliation")
+    def unexpected_resolution(**_kwargs: object) -> None:
+        pytest.fail("blocked or malformed output reached fixture resolution")
 
     monkeypatch.setattr(
         worker_runtime,
-        "reconcile_minimum_live_candidates",
-        unexpected_reconciliation,
+        "resolve_minimum_live_detections",
+        unexpected_resolution,
     )
+    detector = FixtureDetector(failures=(code,))
     worker = MinimumLiveWorker(
         repositories=runtime.repositories,
         storage=runtime.storage,
-        analyst_factory=lambda _content: RejectOnceAnalyst(code),
+        analyst_factory=lambda _content: FixtureAnalyst(),
         analyst_settings=AnalystSettings(),
         max_source_bytes=10 * 1024 * 1024,
-        enable_synthetic_reconciliation=True,
+        fixture_detector_factory=lambda _content: detector,
+        runtime_mode=RuntimeMode.DEMO,
     )
 
     with pytest.raises(Exception, match=code.value):
@@ -455,7 +479,114 @@ def test_blocked_or_malformed_output_never_reaches_reconciliation(
     failed = runtime.repositories.get_run(run.run_id)
     assert failed.recovery is not None
     assert failed.recovery.last_error_code == code.value
+    assert detector.calls == 1
     assert runtime.repositories.list_obligations(run.run_id) == []
+
+
+def test_false_detection_has_sanitized_recovery_and_no_persistence(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    runtime, run, envelope = seeded_runtime()
+    detector = FixtureDetector(
+        detections=MinimumLiveDetection(
+            placement_fee_prohibition=False,
+            fee_schedule_reissue=True,
+            employer_paid_medical_exception=True,
+        )
+    )
+    worker = MinimumLiveWorker(
+        repositories=runtime.repositories,
+        storage=runtime.storage,
+        analyst_factory=lambda _content: FixtureAnalyst(),
+        analyst_settings=AnalystSettings(),
+        max_source_bytes=10 * 1024 * 1024,
+        fixture_detector_factory=lambda _content: detector,
+        runtime_mode=RuntimeMode.DEMO,
+    )
+
+    with pytest.raises(Exception, match="FIXTURE_DETECTION_REJECTED"):
+        worker.run(envelope)
+
+    failed = runtime.repositories.get_run(run.run_id)
+    assert failed.recovery is not None
+    assert failed.recovery.last_error_code == "FIXTURE_DETECTION_REJECTED"
+    assert failed.recovery.attempt_count == 1
+    assert runtime.repositories.list_obligations(run.run_id) == []
+    assert runtime.repositories.list_findings(run.run_id) == []
+    assert runtime.repositories.list_actions(run.run_id) == []
+    assert runtime.repositories.list_approvals(run.run_id) == []
+    assert "placement_fee_prohibition" not in caplog.text + failed.model_dump_json()
+
+
+def test_detection_recovery_uses_one_call_per_delivery_and_preserves_identity() -> None:
+    runtime, run, envelope = seeded_runtime()
+    detector = FixtureDetector(failures=(AnalystCode.GEMINI_TIMEOUT,))
+    worker = MinimumLiveWorker(
+        repositories=runtime.repositories,
+        storage=runtime.storage,
+        analyst_factory=lambda _content: FixtureAnalyst(),
+        analyst_settings=AnalystSettings(),
+        max_source_bytes=10 * 1024 * 1024,
+        fixture_detector_factory=lambda _content: detector,
+        runtime_mode=RuntimeMode.DEMO,
+    )
+    source_before = runtime.repositories.get_source_document(run.run_id)
+    regulation_before = runtime.repositories.get_regulation(run.regulation.reg_id)
+
+    with pytest.raises(Exception, match="GEMINI_TIMEOUT"):
+        worker.run(envelope)
+    failed = runtime.repositories.get_run(run.run_id)
+    assert failed.recovery is not None and failed.recovery.attempt_count == 1
+    assert detector.calls == 1
+
+    recovered = worker.run(envelope)
+    assert recovered.state == "AWAITING_APPROVAL" and detector.calls == 2
+    assert runtime.repositories.get_source_document(run.run_id) == source_before
+    assert runtime.repositories.get_regulation(run.regulation.reg_id) == regulation_before
+    identities = (
+        tuple(item.obligation_id for item in runtime.repositories.list_obligations(run.run_id)),
+        recovered.finding_id,
+        recovered.action_id,
+        recovered.approval_id,
+    )
+    events = tuple(runtime.repositories.list_audit_events(run.run_id))
+
+    duplicate = worker.run(envelope)
+    assert duplicate.duplicate_delivery and detector.calls == 2
+    assert identities == (
+        tuple(item.obligation_id for item in runtime.repositories.list_obligations(run.run_id)),
+        duplicate.finding_id,
+        duplicate.action_id,
+        duplicate.approval_id,
+    )
+    assert tuple(runtime.repositories.list_audit_events(run.run_id)) == events
+
+
+def test_detection_mode_rejects_production_and_unknown_binding_before_detection() -> None:
+    runtime, _run, envelope = seeded_runtime()
+    detector = FixtureDetector()
+    with pytest.raises(ValueError, match="FIXTURE_DETECTION_REQUIRES_DEMO_MODE"):
+        MinimumLiveWorker(
+            repositories=runtime.repositories,
+            storage=runtime.storage,
+            analyst_factory=lambda _content: FixtureAnalyst(),
+            analyst_settings=AnalystSettings(),
+            max_source_bytes=10 * 1024 * 1024,
+            fixture_detector_factory=lambda _content: detector,
+            runtime_mode=RuntimeMode.PRODUCTION,
+        )
+    worker = MinimumLiveWorker(
+        repositories=runtime.repositories,
+        storage=runtime.storage,
+        analyst_factory=lambda _content: FixtureAnalyst(),
+        analyst_settings=AnalystSettings(),
+        max_source_bytes=10 * 1024 * 1024,
+        fixture_detector_factory=lambda _content: detector,
+        runtime_mode=RuntimeMode.DEMO,
+    )
+    with pytest.raises(Exception, match="authoritatively bound"):
+        worker.run(envelope.model_copy(update={"source_sha256": "f" * 64}))
+    assert detector.calls == 0
 
 
 def test_three_actual_recovery_attempts_increment_once_and_preserve_all_identity() -> None:

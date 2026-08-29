@@ -13,7 +13,7 @@ from regops_api.analyst_settings import AnalystSettings
 from regops_api.config import RuntimeMode, RuntimeSettings
 from regops_api.counterfactual import DeterministicCounterfactual
 from regops_api.firestore import FirestoreRepositories
-from regops_api.gemini_analyst import build_demo_analyst
+from regops_api.gemini_analyst import build_demo_analyst, build_demo_detector
 from regops_api.integrations import ReviewerIdentityProvider
 from regops_api.internal_auth import GoogleWorkflowIdentityVerifier
 from regops_api.live_fixture import minimum_live_counterfactual
@@ -90,7 +90,12 @@ def build_cloud_runtime(
         ),
         analyst_settings=analyst_settings,
         max_source_bytes=settings.max_upload_bytes,
-        enable_synthetic_reconciliation=True,
+        fixture_detector_factory=lambda content: build_demo_detector(
+            content=content,
+            runtime=settings,
+            settings=analyst_settings,
+        ),
+        runtime_mode=settings.mode,
     )
     return RuntimeContainer(
         settings=settings,

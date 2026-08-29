@@ -11,7 +11,6 @@ from pydantic import Field, ValidationError, model_validator
 
 from regops_api.counterfactual import CounterfactualResult, DeterministicCounterfactual
 from regops_api.domain_models import ConflictMatch, ProposedAmendment, SyntheticContract
-from regops_api.evidence import locator_text, verify_anchor_set
 from regops_api.schemas import Obligation, Severity
 from regops_api.worker_models import (
     AcceptedEvidenceCatalog,
@@ -20,18 +19,31 @@ from regops_api.worker_models import (
     CandidateFinding,
     CandidateObligation,
     CorpusSnapshot,
+    MinimumLiveDetection,
     SourceDocument,
     VerifiedObligationSet,
     WorkerModel,
 )
 
 KNOWN_SOURCE_SHA256 = "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9"
+MINIMUM_LIVE_FIXTURE_VERSION = "minimum-live-slice-v1"
+MinimumLiveFixtureKey = Literal[
+    "placement_fee_prohibition",
+    "fee_schedule_reissue",
+    "employer_paid_medical_exception",
+]
+MINIMUM_LIVE_FIXTURE_KEYS: tuple[MinimumLiveFixtureKey, ...] = (
+    "placement_fee_prohibition",
+    "fee_schedule_reissue",
+    "employer_paid_medical_exception",
+)
 
 
 class MinimumLiveFixture(WorkerModel):
     fixture_version: Literal["minimum-live-slice-v1"]
     source_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     source_doc_id: str = Field(min_length=1, max_length=128)
+    obligation_keys: tuple[MinimumLiveFixtureKey, ...] = Field(min_length=3, max_length=3)
     accepted_obligations: tuple[AcceptedObligation, ...] = Field(min_length=1)
     corpus: CorpusSnapshot
     target_contract: SyntheticContract
@@ -42,6 +54,9 @@ class MinimumLiveFixture(WorkerModel):
     def exact_demo_boundary(self) -> MinimumLiveFixture:
         if (
             self.source_sha256 != KNOWN_SOURCE_SHA256
+            or self.fixture_version != MINIMUM_LIVE_FIXTURE_VERSION
+            or self.obligation_keys != MINIMUM_LIVE_FIXTURE_KEYS
+            or len(self.accepted_obligations) != len(MINIMUM_LIVE_FIXTURE_KEYS)
             or self.target_contract.contract_id != "syn-contract-worker-001"
             or len(self.corpus.impacts) != 1
             or self.corpus.impacts[0].target_id != self.target_contract.contract_id
@@ -103,70 +118,33 @@ def load_minimum_live_fixture(source_sha256: str) -> MinimumLiveFixture:
         raise ValueError("LIVE_FIXTURE_INVALID") from None
 
 
-def _normalized_evidence_key(value: CandidateObligation | AcceptedObligation) -> tuple[object, ...]:
-    return tuple(
-        sorted(
-            (
-                anchor.doc_id,
-                anchor.doc_kind.value,
-                anchor.source_sha256,
-                anchor.page,
-                locator_text(anchor.quote),
-            )
-            for anchor in value.evidence
-        )
-    )
-
-
-def reconcile_minimum_live_candidates(
+def resolve_minimum_live_detections(
     *,
     fixture: MinimumLiveFixture,
     source: SourceDocument,
-    candidates: AnalystDraftOutput,
+    detections: MinimumLiveDetection,
 ) -> AnalystDraftOutput:
-    """Canonicalize statement-only variance inside the exact synthetic demo fixture.
-
-    Selection is evidence-owned: every candidate must map one-to-one to an accepted
-    obligation by its complete normalized evidence set, while exact verification of
-    every unchanged anchor and every other claim field remains mandatory.
-    """
+    """Resolve exact synthetic detections to backend-owned candidate records."""
     if (
-        fixture.fixture_version != "minimum-live-slice-v1"
+        fixture.fixture_version != MINIMUM_LIVE_FIXTURE_VERSION
         or not compare_digest(fixture.source_sha256, KNOWN_SOURCE_SHA256)
         or not compare_digest(source.identity.source_sha256, KNOWN_SOURCE_SHA256)
         or source.identity.doc_id != fixture.source_doc_id
-        or len(candidates.obligations) != len(fixture.accepted_obligations)
+        or fixture.obligation_keys != MINIMUM_LIVE_FIXTURE_KEYS
     ):
-        return candidates
-    accepted = fixture.accepted_catalog(source)
-    reconciled: list[CandidateObligation] = []
-    matched: set[int] = set()
-    for candidate in candidates.obligations:
-        matches = [
-            (index, item)
-            for index, item in enumerate(accepted.obligations)
-            if _normalized_evidence_key(candidate) == _normalized_evidence_key(item)
-        ]
-        if len(matches) != 1:
-            return candidates
-        index, reference = matches[0]
-        if (
-            index in matched
-            or candidate.type is not reference.type
-            or candidate.effective_date != reference.effective_date
-            or candidate.exceptions != reference.exceptions
-            or verify_anchor_set(
-                candidate.evidence,
-                accepted=reference.evidence,
-                documents=(source,),
-            )
-        ):
-            return candidates
-        matched.add(index)
-        reconciled.append(candidate.model_copy(update={"statement": reference.statement}))
-    if matched != set(range(len(accepted.obligations))):
-        return candidates
-    return AnalystDraftOutput(obligations=tuple(reconciled))
+        raise ValueError("FIXTURE_DETECTION_BOUNDARY_REJECTED")
+    values = detections.model_dump()
+    if set(values) != set(MINIMUM_LIVE_FIXTURE_KEYS) or not all(
+        values[key] is True for key in MINIMUM_LIVE_FIXTURE_KEYS
+    ):
+        raise ValueError("FIXTURE_DETECTION_REJECTED")
+    by_key = dict(zip(fixture.obligation_keys, fixture.accepted_obligations, strict=True))
+    return AnalystDraftOutput(
+        obligations=tuple(
+            CandidateObligation.model_validate(by_key[key].model_dump())
+            for key in MINIMUM_LIVE_FIXTURE_KEYS
+        )
+    )
 
 
 def placement_fee_matcher(

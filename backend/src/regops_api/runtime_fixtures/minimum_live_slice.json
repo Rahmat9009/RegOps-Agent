@@ -2,6 +2,11 @@
   "fixture_version": "minimum-live-slice-v1",
   "source_sha256": "6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9",
   "source_doc_id": "REG-2026-0417",
+  "obligation_keys": [
+    "placement_fee_prohibition",
+    "fee_schedule_reissue",
+    "employer_paid_medical_exception"
+  ],
   "accepted_obligations": [
     {
       "statement": "Licensed recruitment agencies must not charge migrant workers placement fees.",
