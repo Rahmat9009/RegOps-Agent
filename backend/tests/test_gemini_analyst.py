@@ -122,14 +122,18 @@ def test_schema_model_and_capabilities_are_strictly_configured() -> None:
     )
     model, contents, config = client.calls[0]
     assert model == "gemini-test-injected"
-    assert config.temperature == 0 and config.candidate_count == 1
+    assert config.candidate_count == 1
+    assert config.temperature is None and config.top_p is None and config.top_k is None
     assert config.response_mime_type == "application/json"
-    assert config.response_json_schema == AnalystDraftOutput.model_json_schema()
+    assert config.response_json_schema == gemini_analyst._provider_response_schema()
+    assert config.response_json_schema != AnalystDraftOutput.model_json_schema()
     assert config.response_schema is None
     assert config.should_return_http_response is True
     assert config.tools is None and config.tool_config is None and config.cached_content is None
     assert config.automatic_function_calling and config.automatic_function_calling.disable
     assert config.thinking_config and config.thinking_config.include_thoughts is False
+    assert config.thinking_config.thinking_budget is None
+    assert config.thinking_config.thinking_level is types.ThinkingLevel.MINIMAL
     assert config.max_output_tokens == 8192
     assert config.http_options and config.http_options.timeout
     assert config.http_options.timeout <= 90_000
@@ -142,6 +146,32 @@ def test_schema_model_and_capabilities_are_strictly_configured() -> None:
     )
     for part, page in zip(parts[1:], source_fixture().pages, strict=True):
         assert json.loads(cast(str, part.text)) == {"page": page.page, "text": page.text}
+
+
+def test_provider_schema_projection_keeps_supported_bounds_without_weakening_pydantic() -> None:
+    strict = AnalystDraftOutput.model_json_schema()
+    projected = gemini_analyst._provider_response_schema()
+    strict_obligation = strict["$defs"]["CandidateObligation"]
+    projected_obligation = projected["properties"]["obligations"]["items"]
+
+    assert strict_obligation["properties"]["statement"]["minLength"] == 1
+    assert "minLength" not in projected_obligation["properties"]["statement"]
+    assert strict_obligation["properties"]["exceptions"]["default"] == []
+    assert "exceptions" not in projected_obligation["properties"]
+    assert "effective_date" not in projected_obligation["properties"]
+    assert strict["$defs"]["EvidenceAnchor"]["properties"]["doc_id"]["pattern"]
+    projected_evidence = projected_obligation["properties"]["evidence"]["items"]
+    assert "pattern" not in projected_evidence["properties"]["doc_id"]
+    assert "minItems" not in projected["properties"]["obligations"]
+    assert "maxItems" not in projected["properties"]["obligations"]
+    assert strict["properties"]["obligations"]["minItems"] == 1
+    assert strict["properties"]["obligations"]["maxItems"] == 50
+    assert projected_obligation["properties"]["evidence"]["minItems"] == 1
+    assert projected_obligation["properties"]["evidence"]["maxItems"] == 5
+    assert projected_evidence["properties"]["page"] == {"type": "integer"}
+    assert strict["$defs"]["EvidenceAnchor"]["properties"]["page"]["minimum"] == 1
+    assert "additionalProperties" not in projected_obligation
+    assert AnalystDraftOutput.model_json_schema() == strict
 
 
 @pytest.mark.parametrize(
@@ -438,12 +468,54 @@ def test_response_and_candidate_limits() -> None:
         assert len(client.calls) == 1
 
 
+def test_valid_thought_signature_is_inspected_then_discarded(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.DEBUG)
+    signature = "opaque-provider-continuity-token"
+    payload = json.loads(recorded())
+    payload["candidates"][0]["content"]["parts"][0]["thoughtSignature"] = signature
+    body = json.dumps(payload)
+    output_guard = FakeInspector()
+
+    candidates = adapter(
+        FakeGeneration(body), output_guard=output_guard
+    ).analyze(source=source_fixture())
+
+    assert candidates == analyst_fixture()
+    assert signature in output_guard.calls[0][0]
+    assert signature not in output_guard.calls[1][0]
+    assert signature not in candidates.model_dump_json()
+    assert signature not in caplog.text
+
+
+@pytest.mark.parametrize("signature", [None, 1, True, {}, []])
+def test_malformed_thought_signature_is_rejected(signature: object) -> None:
+    payload = json.loads(recorded())
+    payload["candidates"][0]["content"]["parts"][0]["thoughtSignature"] = signature
+
+    with pytest.raises(AnalystError, match="GEMINI_MALFORMED_OUTPUT"):
+        adapter(FakeGeneration(json.dumps(payload))).analyze(source=source_fixture())
+
+
+def test_any_other_text_part_field_is_rejected() -> None:
+    payload = json.loads(recorded())
+    payload["candidates"][0]["content"]["parts"][0].update(
+        {"thoughtSignature": "opaque", "providerExtension": "unexpected"}
+    )
+
+    with pytest.raises(AnalystError, match="GEMINI_MALFORMED_OUTPUT"):
+        adapter(FakeGeneration(json.dumps(payload))).analyze(source=source_fixture())
+
+
 @pytest.mark.parametrize(
     "part",
     [
         {"functionCall": {"name": "approve", "args": {}}},
         {"text": "{}", "thought": True},
+        {"thought": True, "thoughtSignature": "opaque"},
         {"text": "{}", "inlineData": {"mimeType": "text/plain", "data": "eA=="}},
+        {"executableCode": {"language": "PYTHON", "code": "pass"}},
     ],
 )
 def test_model_tool_calls_and_non_text_parts_never_become_candidates(part: dict[str, Any]) -> None:
@@ -638,9 +710,17 @@ def test_official_sdk_raw_response_does_not_auto_parse_candidate_json(
             analyst.analyze(source=source_fixture())
         assert (
             requests[0]["generationConfig"]["responseJsonSchema"]
-            == AnalystDraftOutput.model_json_schema()
+            == gemini_analyst._provider_response_schema()
         )
         assert requests[0]["generationConfig"]["responseMimeType"] == "application/json"
+        generation_config = requests[0]["generationConfig"]
+        assert "temperature" not in generation_config
+        assert "topP" not in generation_config and "topK" not in generation_config
+        assert generation_config["thinkingConfig"] == {
+            "include_thoughts": False,
+            "thinking_level": "MINIMAL",
+        }
+        assert "thinking_budget" not in generation_config["thinkingConfig"]
         assert "tools" not in requests[0]
     finally:
         client.close()

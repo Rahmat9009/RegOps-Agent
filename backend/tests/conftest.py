@@ -11,7 +11,10 @@ import pytest
 
 @pytest.fixture(autouse=True)
 def offline_by_default(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
-    if request.node.get_closest_marker("live_gemini") and os.getenv("REGOPS_LIVE_GEMINI") == "1":
+    live_gemini_enabled = os.getenv("REGOPS_LIVE_GEMINI") == "1" or os.getenv(
+        "REGOPS_LIVE_GEMINI_DIAGNOSTIC"
+    ) == "1"
+    if request.node.get_closest_marker("live_gemini") and live_gemini_enabled:
         return
     if request.node.get_closest_marker("firestore_emulator") and os.getenv(
         "FIRESTORE_EMULATOR_HOST"

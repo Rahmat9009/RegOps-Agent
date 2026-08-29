@@ -67,6 +67,49 @@ def _json_object(text: str) -> dict[str, Any]:
     return value
 
 
+def _provider_response_schema() -> dict[str, Any]:
+    """Return a bounded inline hint below Vertex's structured-schema complexity limit.
+
+    Pydantic remains the authoritative parser, including extra-field, string-length,
+    pattern and safe-text constraints that are intentionally absent from this hint.
+    """
+    evidence = {
+        "type": "object",
+        "properties": {
+            "doc_id": {"type": "string"},
+            "doc_kind": {"type": "string"},
+            "source_sha256": {"type": "string"},
+            "page": {"type": "integer"},
+            "quote": {"type": "string"},
+        },
+        "required": ["doc_id", "doc_kind", "source_sha256", "page", "quote"],
+    }
+    obligation = {
+        "type": "object",
+        "properties": {
+            "statement": {"type": "string"},
+            "type": {"type": "string"},
+            "evidence": {
+                "type": "array",
+                "items": evidence,
+                "minItems": 1,
+                "maxItems": 5,
+            },
+        },
+        "required": ["statement", "type", "evidence"],
+    }
+    return {
+        "type": "object",
+        "properties": {
+            "obligations": {
+                "type": "array",
+                "items": obligation,
+            }
+        },
+        "required": ["obligations"],
+    }
+
+
 def _retry_after(response: object) -> float:
     """Keep only a bounded delay, never the provider's headers or response."""
     if not isinstance(response, httpx.Response):
@@ -187,15 +230,17 @@ class GeminiRegulationAnalyst:
         retry_after = 0.0
         config = types.GenerateContentConfig(
             system_instruction=analyst_prompt(),
-            temperature=0,
             candidate_count=1,
             max_output_tokens=self._settings.max_output_tokens,
             response_mime_type="application/json",
-            response_json_schema=AnalystDraftOutput.model_json_schema(),
+            response_json_schema=_provider_response_schema(),
             # Otherwise google-genai parses candidate JSON before our Armor gate.
             should_return_http_response=True,
             automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
-            thinking_config=types.ThinkingConfig(include_thoughts=False),
+            thinking_config=types.ThinkingConfig(
+                include_thoughts=False,
+                thinking_level=types.ThinkingLevel.MINIMAL,
+            ),
             http_options=types.HttpOptions(
                 timeout=max(1, int(timeout * 1000)),
                 retry_options=types.HttpRetryOptions(attempts=1),
@@ -310,12 +355,23 @@ class GeminiRegulationAnalyst:
             parts = content["parts"]
             if not isinstance(parts, list) or not parts:
                 raise ValueError("EMPTY_PARTS")
-            if any(
-                not isinstance(p, dict) or set(p) != {"text"} or not isinstance(p["text"], str)
-                for p in parts
-            ):
-                raise ValueError("NON_TEXT_OUTPUT")
-            text = "".join(p["text"] for p in parts)
+            text_parts: list[str] = []
+            for part in parts:
+                if (
+                    not isinstance(part, dict)
+                    or "text" not in part
+                    or not isinstance(part["text"], str)
+                    or not set(part) <= {"text", "thoughtSignature"}
+                    or (
+                        "thoughtSignature" in part
+                        and not isinstance(part["thoughtSignature"], str)
+                    )
+                ):
+                    raise ValueError("NON_TEXT_OUTPUT")
+                # Gemini 3.5 may attach an opaque continuity token to a text part.
+                # It is validated above but never copied beyond this raw envelope.
+                text_parts.append(part["text"])
+            text = "".join(text_parts)
             if not text.strip() or len(text) > self._settings.max_output_chars:
                 raise ValueError("INVALID_OUTPUT_SIZE")
         except AnalystError:

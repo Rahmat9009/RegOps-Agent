@@ -1,5 +1,37 @@
 # Backend contract notes
 
+## 2026-08-29 — Gemini 3.5 live compatibility correction (no contract change)
+
+The frozen public contract and frontend are unchanged. The live request rejection
+was reproduced with `google-genai==2.20.0` through an ADC/Vertex Enterprise-only,
+payload-blind diagnostic in `global`. Model access, `thinking_level=MINIMAL`, and
+JSON mode returned HTTP 200. The authored `AnalystDraftOutput.model_json_schema()`
+returned HTTP 400. A smaller inline projection returned HTTP 200; adding the outer
+obligation array's `minItems: 1` and `maxItems: 50` back to that nested projection
+returned HTTP 400. This identifies the endpoint's structured-schema complexity
+limit, specifically the outer 1..50 cardinality over the nested obligation/evidence
+shape, as the live request failure. `temperature=0` returned HTTP 200 in the reduced
+probe but is still intentionally omitted, together with `top_p` and `top_k`, under
+current Gemini 3.5 guidance.
+
+The provider schema remains structurally bounded and keeps the accepted 1..5 evidence
+cardinality; generation also remains bounded by output-token, raw-byte and decoded-
+character limits. The returned text must still pass the unchanged strict Pydantic
+model, its 1..50 obligation cardinality and all extra-field/identifier/text rules,
+then the unchanged deterministic verifier. No model-owned identifiers are accepted.
+
+Gemini 3.5 text parts may carry a string `thoughtSignature`. Model Armor still sees
+the complete raw HTTP body before parsing and sees decoded text again. The adapter
+validates the signature type, discards the opaque value, and never persists, returns
+or logs it. Missing text, malformed signatures, thought-only parts, tool calls,
+executable code and every other part field fail closed.
+
+The safe request diagnostic is opt-in through
+`REGOPS_LIVE_GEMINI_DIAGNOSTIC=1`; default tests cannot use the network or ADC. It
+uses only a fixed synthetic prompt and emits only fixed diagnostic labels/status
+codes. No cloud resources, deployment, workflow, source, action, approval or audit
+records were changed by this correction.
+
 ## 2026-08-28 — minimum live worker slice (no contract change)
 
 The frozen public contract remains unchanged: exactly eight `/api/v1` paths and 13

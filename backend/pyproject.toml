@@ -50,7 +50,7 @@ addopts = "-ra --strict-config --strict-markers"
 testpaths = ["tests"]
 markers = [
     "firestore_emulator: opt-in integration test requiring FIRESTORE_EMULATOR_HOST",
-    "live_gemini: explicit opt-in Google Cloud Gemini and Model Armor smoke test",
+    "live_gemini: explicit opt-in Google Cloud Gemini diagnostic or Model Armor smoke test",
 ]
 
 [tool.ruff]

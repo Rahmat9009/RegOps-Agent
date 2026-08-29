@@ -180,18 +180,33 @@ Only fixed `ArmorOutcome` values leave the adapter; matched text and vendor
 diagnostics are discarded. No sanitized replacement text is substituted.
 
 `google-genai` is configured with `enterprise=True`, explicit project/location,
-ADC, API version `v1`, temperature zero, one candidate, no tools, no automatic
-function calls, no cached corpus and no thought output. `REGOPS_GEMINI_MODEL`
-defaults to `gemini-3.5-flash`. The generation config uses JSON MIME and
-`AnalystDraftOutput.model_json_schema()` with strict additional-field rejection.
-The versioned prompt is packaged in the wheel.
+ADC, API version `v1`, one candidate, no tools, no automatic function calls, no
+cached corpus and no thought output. Gemini 3.5 sampling parameters (`temperature`,
+`top_p`, and `top_k`) are intentionally omitted. Bounded extraction uses
+`thinking_level=MINIMAL` with `include_thoughts=False`; deterministic behavior comes
+from the system instruction, structured output and the verifier. `REGOPS_GEMINI_MODEL`
+defaults to `gemini-3.5-flash`.
+
+The generation config uses JSON MIME and a small inline provider schema. A live
+incremental probe showed that the complete nested Pydantic schema is rejected for
+schema complexity: restoring the outer obligation array's `minItems: 1` and
+`maxItems: 50` to the otherwise accepted projection reproduces HTTP 400. The request
+therefore omits only that provider-side cardinality pair and other redundant schema
+detail. The response remains bounded by token/byte/character limits and must still
+pass the unchanged, strict `AnalystDraftOutput` model (including the 1..50 obligation
+bound, extra-field rejection, identifiers, lengths and patterns) and deterministic
+verifier. The versioned prompt is packaged in the wheel.
 
 `should_return_http_response=True` prevents the SDK from parsing model JSON before
 inspection. The bounded raw response is inspected first, then its decoded text is
 inspected again before strict JSON/Pydantic parsing. Missing/empty/truncated,
 non-object, duplicate-key, non-finite, schema-invalid, refusal and tool-call outputs
 fail without partial candidates. Default bounds are 8,192 generated tokens,
-32,000 output characters and 128,000 raw response bytes.
+32,000 output characters and 128,000 raw response bytes. A Gemini 3.5 text part may
+also contain a string `thoughtSignature`; it is accepted only alongside string
+`text`, inspected as part of the complete raw body, then discarded. It is never
+returned, persisted or logged. Any malformed signature or any other part field
+fails closed.
 
 `build_demo_analyst` requires `REGOPS_MODE=demo`, `GOOGLE_CLOUD_PROJECT`,
 `REGOPS_ARMOR_LOCATION`, `REGOPS_GEMINI_LOCATION`,
@@ -229,6 +244,14 @@ and checks structured output and citations, not exact live prose. A skipped test
 does not establish regional model availability, live extraction quality or cloud
 security configuration.
 
+The request-only diagnostic is separately skipped unless
+`REGOPS_LIVE_GEMINI_DIAGNOSTIC=1`; it requires `GOOGLE_CLOUD_PROJECT` and
+`REGOPS_GEMINI_LOCATION` (or `REGOPS_REGION`) and uses ADC/Vertex Enterprise only.
+It sends a fixed synthetic prompt, adds the generation config incrementally, and
+prints only fixed labels and status codes. It never reads or logs response bodies,
+authorization material or thought signatures. It distinguishes model/IAM access
+from schema/config rejection and does not run in the default suite.
+
 ### Reproducing dependency locks (Python 3.12, PowerShell)
 
 Existing pins are retained as resolver constraints. Reports stay in ignored
@@ -245,8 +268,10 @@ direct pins are checked by the default integrity test.
 .venv\Scripts\python -m pip check
 ```
 
-API references used for the adapter: [Google Gen AI SDK](https://googleapis.github.io/python-genai/)
-and [Model Armor sanitization result](https://docs.cloud.google.com/model-armor/reference/rest/v1/SanitizationResult).
+API references used for the adapter: [Gemini 3.5 Flash guide](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/guides/gemini-3-5-flash),
+[structured output](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/capabilities/control-generated-output),
+[Google Gen AI SDK](https://googleapis.github.io/python-genai/), and
+[Model Armor sanitization result](https://docs.cloud.google.com/model-armor/reference/rest/v1/SanitizationResult).
 
 ## Phase 1B.2C: ADK Impact Investigator
 
