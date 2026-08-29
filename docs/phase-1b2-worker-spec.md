@@ -530,7 +530,7 @@ Only safe codes and fixed messages enter recovery/API/audit surfaces.
 | `PDF_PARSING_FAILED` | Terminal | Same bytes will fail deterministically; transition to `FAILED`. |
 | `MODEL_ARMOR_UNAVAILABLE` | Retryable | Fail closed before model/tool use or persistence; resume at the current active stage under the bounded retry budget. |
 | `MODEL_ARMOR_INPUT_BLOCKED` | Terminal/quarantined | No Gemini, ADK, or tool call; persist only sanitized security metadata and transition to `FAILED`. |
-| `MODEL_ARMOR_OUTPUT_BLOCKED` | Terminal/quarantined | Discard raw output, persist no analyst/investigator artifact, and transition to `FAILED` with sanitized metadata. |
+| `MODEL_ARMOR_OUTPUT_{PROMPT_INJECTION,SENSITIVE_DATA,UNSAFE_CONTENT}_BLOCKED` | Recoverable checkpoint, no automatic bypass retry | Discard decoded output, persist no analyst/investigator artifact, and resume only from the original `EXTRACTING` envelope under the stored worker attempt budget. |
 | `GEMINI_TIMEOUT` | Retryable | Resume at `EXTRACTING`; three total provider attempts per worker attempt, bounded worker attempts. |
 | `GEMINI_MALFORMED_OUTPUT` | Retryable once, then terminal | No obligations persisted; repeat clean request once, then `FAILED`. |
 | `GEMINI_SAFETY_REFUSAL` | Terminal | No prompt relaxation; transition to `FAILED`. |
@@ -806,11 +806,16 @@ intermediate agent/tool messages, and final responses. Before parsing or persist
 Investigator output, the worker applies the output template and rejects blocked content.
 
 Prompt injection, jailbreak instructions, unsafe content, and configured sensitive-data matches
-fail closed. A transient Armor outage is `FAILED_RECOVERABLE` with safe code
+in decoded model-authored text fail closed. The bounded provider JSON is first structurally
+validated; opaque wrapper metadata and a type-valid `thoughtSignature` are discarded before the
+complete decoded text is inspected. A transient Armor outage is `FAILED_RECOVERABLE` with safe code
 `MODEL_ARMOR_UNAVAILABLE`; a confirmed malicious input is quarantined and transitions through the
 normal sanitized terminal-failure path with code `MODEL_ARMOR_INPUT_BLOCKED`. A blocked output
-uses `MODEL_ARMOR_OUTPUT_BLOCKED`. These are internal codes and do not change the frozen run-state
-enum or OpenAPI contract.
+uses the fixed category-specific internal code
+`MODEL_ARMOR_OUTPUT_PROMPT_INJECTION_BLOCKED`,
+`MODEL_ARMOR_OUTPUT_SENSITIVE_DATA_BLOCKED`, or
+`MODEL_ARMOR_OUTPUT_UNSAFE_CONTENT_BLOCKED`. These codes do not change the frozen run-state enum
+or OpenAPI contract and never include matched content.
 
 Persist only `run_id`, stage, Armor template/revision, event ID, allow/block/quarantine category,
 rule category, timestamp, and a digest needed for deduplication. Never persist the matched attack

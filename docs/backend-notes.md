@@ -1,5 +1,58 @@
 # Backend contract notes
 
+## 2026-08-29 — Model Armor output wrapper correction (no contract change)
+
+The frozen contract and frontend remain unchanged. An opt-in, content-free live
+diagnostic used the tracked synthetic PDF, the production Gemini 3.5 request,
+ADC/Vertex Enterprise and the existing `regops-output` template. It proved
+`prompt_injection_blocked` for the complete raw provider response and `allowed` for
+the complete decoded model text in one generation, then proved
+`prompt_injection_blocked` for both raw and decoded text in a separate generation
+(each one candidate and one text part). Earlier probes had separately allowed both
+the known-safe candidate fixture and an opaque synthetic signature. This establishes
+the fixed detector category and also proves model-output variability: provider
+wrapper material can false-positive independently, while some generated decoded
+text is validly blocked. No response body, model text, quote, signature, credential
+or provider payload was printed, logged, persisted or returned by the diagnostic.
+
+The adapter handles both cases without weakening Armor. It retains
+`should_return_http_response=True`, structurally decodes the bounded raw JSON with
+duplicate-key and NaN rejection, validates candidate count, finish reason, role,
+safety state and exact allowed text-part keys, and discards opaque non-content
+metadata. Model Armor then inspects the complete decoded text before strict
+Pydantic candidate parsing and the unchanged deterministic verifier. Provider
+metadata is not a meaningful content-security boundary; accepting it cannot
+authorize a candidate, while inspecting it can make non-content transport fields
+look like model instructions. If decoded text is blocked, the category-specific
+failure is preserved and no candidate parsing or persistence occurs.
+
+To reduce the observed model-authored variant, the system prompt is versioned to
+`regulation-analyst-v2` and requires neutral third-person declarative candidate
+fields, forbids prompt/meta/instructional material in candidate prose, and requires
+the shortest exact supporting quotation without adjacent unrelated material. The
+provider projection additionally applies existing Pydantic string bounds and fixed
+obligation/document-kind enums. Strict Pydantic parsing and deterministic
+verification remain unchanged and authoritative.
+
+One post-correction live diagnostic was run after those v2 constraints were applied.
+The Gemini request returned one candidate/one text part and the existing output
+template reported `allowed` for both the raw envelope and decoded text. This was a
+verification of the changed request, not a retry that accepted or persisted either
+earlier blocked response; both blocked responses had already been discarded.
+
+A `thoughtSignature` is accepted only as a string attached to a string text part,
+then discarded before Armor inspection. It is never persisted, exposed or logged.
+Unknown part fields, thought-only parts, functions, executable code, non-text output,
+malformed envelopes and blocked decoded text all fail closed. The input Armor gate
+is unchanged. Decoded output blocks now use fixed sanitized category-specific
+internal codes for prompt injection, sensitive data and unsafe content, without
+changing the public contract shape or recording matched content.
+
+The output diagnostic is opt-in through
+`REGOPS_LIVE_GEMINI_ARMOR_DIAGNOSTIC=1` and remains excluded from the default suite.
+It performs read-only inference/template inspection and makes no cloud resource or
+deployment changes.
+
 ## 2026-08-29 — Gemini 3.5 live compatibility correction (no contract change)
 
 The frozen public contract and frontend are unchanged. The live request rejection
@@ -20,10 +73,10 @@ character limits. The returned text must still pass the unchanged strict Pydanti
 model, its 1..50 obligation cardinality and all extra-field/identifier/text rules,
 then the unchanged deterministic verifier. No model-owned identifiers are accepted.
 
-Gemini 3.5 text parts may carry a string `thoughtSignature`. Model Armor still sees
-the complete raw HTTP body before parsing and sees decoded text again. The adapter
-validates the signature type, discards the opaque value, and never persists, returns
-or logs it. Missing text, malformed signatures, thought-only parts, tool calls,
+Gemini 3.5 text parts may carry a string `thoughtSignature`. The adapter validates
+the signature type while structurally decoding the provider response, discards the
+opaque value before decoded-text Armor inspection, and never persists, returns or
+logs it. Missing text, malformed signatures, thought-only parts, tool calls,
 executable code and every other part field fail closed.
 
 The safe request diagnostic is opt-in through

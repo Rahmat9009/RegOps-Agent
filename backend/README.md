@@ -198,15 +198,27 @@ bound, extra-field rejection, identifiers, lengths and patterns) and determinist
 verifier. The versioned prompt is packaged in the wheel.
 
 `should_return_http_response=True` prevents the SDK from parsing model JSON before
-inspection. The bounded raw response is inspected first, then its decoded text is
-inspected again before strict JSON/Pydantic parsing. Missing/empty/truncated,
-non-object, duplicate-key, non-finite, schema-invalid, refusal and tool-call outputs
-fail without partial candidates. Default bounds are 8,192 generated tokens,
+the application-controlled boundary. The adapter structurally decodes that bounded
+raw envelope with duplicate-key and non-finite-number rejection; validates the
+candidate count, finish reason, role, safety ratings and exact allowed part keys;
+then discards provider wrapper metadata. Model Armor inspects the complete decoded
+model-authored text before strict JSON/Pydantic parsing and deterministic
+verification. Inspecting opaque transport/provider metadata is not a content-security
+boundary: one live response was blocked only in its raw wrapper while its decoded
+text was allowed. A separate live generation produced decoded text that was itself
+prompt-injection-blocked; that block remains authoritative. The v2 system prompt
+requires neutral declarative candidate fields and shortest supporting quotations,
+and the provider projection now bounds generated strings and obligation/document
+types to reduce unsupported prompt-like material. Missing/empty/truncated, non-object,
+schema-invalid, refusal and tool-call outputs fail without partial candidates.
+Default bounds are 8,192 generated tokens,
 32,000 output characters and 128,000 raw response bytes. A Gemini 3.5 text part may
 also contain a string `thoughtSignature`; it is accepted only alongside string
-`text`, inspected as part of the complete raw body, then discarded. It is never
-returned, persisted or logged. Any malformed signature or any other part field
-fails closed.
+`text`, type-checked while decoding, then discarded before Armor inspection. It is
+never returned, persisted or logged. Any malformed signature or any other part
+field fails closed. Confirmed output blocks use fixed category-specific internal
+codes for prompt injection, sensitive data or unsafe content; no matched content or
+provider diagnostic enters recovery records.
 
 `build_demo_analyst` requires `REGOPS_MODE=demo`, `GOOGLE_CLOUD_PROJECT`,
 `REGOPS_ARMOR_LOCATION`, `REGOPS_GEMINI_LOCATION`,
@@ -251,6 +263,15 @@ It sends a fixed synthetic prompt, adds the generation config incrementally, and
 prints only fixed labels and status codes. It never reads or logs response bodies,
 authorization material or thought signatures. It distinguishes model/IAM access
 from schema/config rejection and does not run in the default suite.
+
+The content-free output diagnostic is separately opt-in through
+`REGOPS_LIVE_GEMINI_ARMOR_DIAGNOSTIC=1`. It uses the tracked synthetic PDF, the
+production Gemini request configuration, ADC/Vertex Enterprise and the existing
+`regops-output` template. Raw response data remains only inside the sensitive-I/O
+scope and is discarded after inspection. The test emits only fixed raw/decoded
+`ArmorOutcome` categories and bounded candidate/text-part counts; it never emits or
+retains provider payloads, model text or thought signatures. A blocked decoded-text
+outcome is a successful security diagnosis, not an accepted candidate.
 
 ### Reproducing dependency locks (Python 3.12, PowerShell)
 

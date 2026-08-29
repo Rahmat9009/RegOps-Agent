@@ -101,13 +101,14 @@ class UnsupportedAnalyst(FixtureAnalyst):
 
 
 class RejectOnceAnalyst(FixtureAnalyst):
-    def __init__(self) -> None:
+    def __init__(self, code: AnalystCode = AnalystCode.GEMINI_REQUEST_REJECTED) -> None:
         self.calls = 0
+        self.code = code
 
     def analyze(self, *, source: SourceDocument) -> AnalystDraftOutput:
         self.calls += 1
         if self.calls == 1:
-            raise AnalystError(AnalystCode.GEMINI_REQUEST_REJECTED)
+            raise AnalystError(self.code)
         return super().analyze(source=source)
 
 
@@ -307,9 +308,18 @@ def test_unsupported_candidate_persists_sanitized_recoverable_checkpoint() -> No
     assert len(runtime.repositories.list_obligations(run.run_id)) == 3
 
 
-def test_original_envelope_resumes_rejected_gemini_request_without_duplicate_records() -> None:
+@pytest.mark.parametrize(
+    "failure_code",
+    [
+        AnalystCode.GEMINI_REQUEST_REJECTED,
+        AnalystCode.MODEL_ARMOR_OUTPUT_PROMPT_INJECTION_BLOCKED,
+    ],
+)
+def test_original_envelope_resumes_analyst_failure_without_duplicate_records(
+    failure_code: AnalystCode,
+) -> None:
     runtime, run, envelope = seeded_runtime()
-    analyst = RejectOnceAnalyst()
+    analyst = RejectOnceAnalyst(failure_code)
     worker = MinimumLiveWorker(
         repositories=runtime.repositories,
         storage=runtime.storage,
@@ -320,7 +330,7 @@ def test_original_envelope_resumes_rejected_gemini_request_without_duplicate_rec
     source_before = runtime.repositories.get_source_document(run.run_id)
     regulation_before = runtime.repositories.get_regulation(run.regulation.reg_id)
 
-    with pytest.raises(Exception, match="GEMINI_REQUEST_REJECTED"):
+    with pytest.raises(Exception, match=failure_code.value):
         worker.run(envelope)
 
     failed = runtime.repositories.get_run(run.run_id)
@@ -330,7 +340,7 @@ def test_original_envelope_resumes_rejected_gemini_request_without_duplicate_rec
     assert failed.recovery is not None
     assert failed.recovery.checkpoint_state is RunState.EXTRACTING
     assert failed.recovery.attempt_count == 1
-    assert failed.recovery.last_error_code == "GEMINI_REQUEST_REJECTED"
+    assert failed.recovery.last_error_code == failure_code.value
     assert checkpoint is not None and checkpoint.resume_state is RunState.EXTRACTING
     assert runtime.repositories.list_obligations(run.run_id) == []
     assert runtime.repositories.list_findings(run.run_id) == []

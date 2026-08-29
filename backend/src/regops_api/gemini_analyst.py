@@ -10,7 +10,7 @@ from contextlib import ExitStack, suppress
 from email.utils import parsedate_to_datetime
 from importlib.resources import files
 from math import isfinite
-from typing import Any, Protocol, TypeVar
+from typing import Any, NamedTuple, Protocol, TypeVar
 
 import httpx
 from google import genai
@@ -40,6 +40,12 @@ class GenerationClient(Protocol):
     def generate_content(
         self, *, model: str, contents: list[types.Content], config: types.GenerateContentConfig
     ) -> types.GenerateContentResponse: ...
+
+
+class DecodedModelResponse(NamedTuple):
+    text: str
+    candidate_count: int
+    text_part_count: int
 
 
 def analyst_prompt() -> str:
@@ -76,19 +82,22 @@ def _provider_response_schema() -> dict[str, Any]:
     evidence = {
         "type": "object",
         "properties": {
-            "doc_id": {"type": "string"},
-            "doc_kind": {"type": "string"},
-            "source_sha256": {"type": "string"},
+            "doc_id": {"type": "string", "maxLength": 128},
+            "doc_kind": {"type": "string", "enum": ["regulation"]},
+            "source_sha256": {"type": "string", "maxLength": 64},
             "page": {"type": "integer"},
-            "quote": {"type": "string"},
+            "quote": {"type": "string", "maxLength": 300},
         },
         "required": ["doc_id", "doc_kind", "source_sha256", "page", "quote"],
     }
     obligation = {
         "type": "object",
         "properties": {
-            "statement": {"type": "string"},
-            "type": {"type": "string"},
+            "statement": {"type": "string", "maxLength": 1000},
+            "type": {
+                "type": "string",
+                "enum": ["prohibition", "requirement", "limit", "exception"],
+            },
             "evidence": {
                 "type": "array",
                 "items": evidence,
@@ -108,6 +117,64 @@ def _provider_response_schema() -> dict[str, Any]:
         },
         "required": ["obligations"],
     }
+
+
+def _decode_model_response(raw: str, *, max_output_chars: int) -> DecodedModelResponse:
+    """Validate the provider envelope and return only decoded model-authored text."""
+    envelope = _json_object(raw)
+    feedback = envelope.get("promptFeedback", {})
+    if not isinstance(feedback, dict):
+        raise ValueError("INVALID_PROMPT_FEEDBACK")
+    if feedback.get("blockReason"):
+        raise AnalystError(AnalystCode.GEMINI_REFUSED)
+    candidates = envelope.get("candidates")
+    if not isinstance(candidates, list) or len(candidates) != 1:
+        raise ValueError("INVALID_CANDIDATES")
+    candidate = candidates[0]
+    if not isinstance(candidate, dict):
+        raise ValueError("INVALID_CANDIDATE")
+    finish = candidate.get("finishReason")
+    if finish in {"SAFETY", "RECITATION", "BLOCKLIST", "PROHIBITED_CONTENT", "SPII"}:
+        raise AnalystError(AnalystCode.GEMINI_REFUSED)
+    if finish != "STOP":
+        raise ValueError("INCOMPLETE_OUTPUT")
+    safety = candidate.get("safetyRatings", [])
+    if not isinstance(safety, list) or any(
+        not isinstance(rating, dict) or rating.get("blocked") is True for rating in safety
+    ):
+        raise AnalystError(AnalystCode.GEMINI_REFUSED)
+    content = candidate.get("content")
+    if (
+        not isinstance(content, dict)
+        or set(content) != {"role", "parts"}
+        or content.get("role") != "model"
+    ):
+        raise ValueError("INVALID_ROLE")
+    parts = content.get("parts")
+    if not isinstance(parts, list) or not parts:
+        raise ValueError("EMPTY_PARTS")
+    text_parts: list[str] = []
+    for part in parts:
+        if (
+            not isinstance(part, dict)
+            or "text" not in part
+            or not isinstance(part["text"], str)
+            or not set(part) <= {"text", "thoughtSignature"}
+            or (
+                "thoughtSignature" in part
+                and not isinstance(part["thoughtSignature"], str)
+            )
+        ):
+            raise ValueError("NON_TEXT_OUTPUT")
+        text_parts.append(part["text"])
+    text = "".join(text_parts)
+    if not text.strip() or len(text) > max_output_chars:
+        raise ValueError("INVALID_OUTPUT_SIZE")
+    return DecodedModelResponse(
+        text=text,
+        candidate_count=len(candidates),
+        text_part_count=len(parts),
+    )
 
 
 def _retry_after(response: object) -> float:
@@ -211,12 +278,20 @@ class GeminiRegulationAnalyst:
                 code = AnalystCode.MODEL_ARMOR_MALFORMED_RESPONSE
             elif result.outcome is ArmorOutcome.INSPECTION_REJECTED:
                 code = AnalystCode.MODEL_ARMOR_REJECTED
+            elif direction == "output":
+                code = {
+                    ArmorOutcome.PROMPT_INJECTION_BLOCKED: (
+                        AnalystCode.MODEL_ARMOR_OUTPUT_PROMPT_INJECTION_BLOCKED
+                    ),
+                    ArmorOutcome.SENSITIVE_DATA_BLOCKED: (
+                        AnalystCode.MODEL_ARMOR_OUTPUT_SENSITIVE_DATA_BLOCKED
+                    ),
+                    ArmorOutcome.UNSAFE_CONTENT_BLOCKED: (
+                        AnalystCode.MODEL_ARMOR_OUTPUT_UNSAFE_CONTENT_BLOCKED
+                    ),
+                }.get(result.outcome, AnalystCode.MODEL_ARMOR_OUTPUT_BLOCKED)
             else:
-                code = (
-                    AnalystCode.MODEL_ARMOR_INPUT_BLOCKED
-                    if direction == "input"
-                    else AnalystCode.MODEL_ARMOR_OUTPUT_BLOCKED
-                )
+                code = AnalystCode.MODEL_ARMOR_INPUT_BLOCKED
             raise AnalystError(code)
 
         self._retry(
@@ -330,58 +405,26 @@ class GeminiRegulationAnalyst:
             timeout=self._settings.timeout_seconds,
             expired=AnalystCode.GEMINI_TIMEOUT,
         )
-        # First inspect the raw HTTP body so the SDK cannot parse model JSON.
-        # Inspect decoded text again to prevent JSON escapes hiding malicious text.
-        self._inspect(raw, "output", deadline)
+        # Structurally validate the provider envelope ourselves; the SDK still cannot
+        # parse candidate JSON ahead of this boundary. Provider wrapper metadata is not
+        # model-authored content and is discarded before content-security inspection.
         try:
-            envelope = _json_object(raw)
-            feedback = envelope.get("promptFeedback", {})
-            if feedback.get("blockReason"):
-                raise AnalystError(AnalystCode.GEMINI_REFUSED)
-            candidates = envelope.get("candidates")
-            if not isinstance(candidates, list) or len(candidates) != 1:
-                raise ValueError("INVALID_CANDIDATES")
-            candidate = candidates[0]
-            finish = candidate.get("finishReason")
-            if finish in {"SAFETY", "RECITATION", "BLOCKLIST", "PROHIBITED_CONTENT", "SPII"}:
-                raise AnalystError(AnalystCode.GEMINI_REFUSED)
-            if finish != "STOP":
-                raise ValueError("INCOMPLETE_OUTPUT")
-            if any(r.get("blocked") is True for r in candidate.get("safetyRatings", [])):
-                raise AnalystError(AnalystCode.GEMINI_REFUSED)
-            content = candidate["content"]
-            if content.get("role") != "model":
-                raise ValueError("INVALID_ROLE")
-            parts = content["parts"]
-            if not isinstance(parts, list) or not parts:
-                raise ValueError("EMPTY_PARTS")
-            text_parts: list[str] = []
-            for part in parts:
-                if (
-                    not isinstance(part, dict)
-                    or "text" not in part
-                    or not isinstance(part["text"], str)
-                    or not set(part) <= {"text", "thoughtSignature"}
-                    or (
-                        "thoughtSignature" in part
-                        and not isinstance(part["thoughtSignature"], str)
-                    )
-                ):
-                    raise ValueError("NON_TEXT_OUTPUT")
-                # Gemini 3.5 may attach an opaque continuity token to a text part.
-                # It is validated above but never copied beyond this raw envelope.
-                text_parts.append(part["text"])
-            text = "".join(text_parts)
-            if not text.strip() or len(text) > self._settings.max_output_chars:
-                raise ValueError("INVALID_OUTPUT_SIZE")
+            decoded = _decode_model_response(
+                raw,
+                max_output_chars=self._settings.max_output_chars,
+            )
         except AnalystError:
             raise
         except Exception:
             raise AnalystError(AnalystCode.GEMINI_MALFORMED_OUTPUT) from None
-        self._inspect(text, "output", deadline)
+        del raw
+        # JSON decoding has exposed escaped text. Armor sees only the complete decoded
+        # model text and still runs before Pydantic or deterministic domain verification.
+        self._inspect(decoded.text, "output", deadline)
         try:
-            _json_object(text)  # Also reject duplicate keys and NaN, not just schema violations.
-            return AnalystDraftOutput.model_validate_json(text)
+            # Also reject duplicate keys and NaN, not just schema violations.
+            _json_object(decoded.text)
+            return AnalystDraftOutput.model_validate_json(decoded.text)
         except (ValueError, ValidationError, RecursionError):
             pass
         raise AnalystError(AnalystCode.GEMINI_MALFORMED_OUTPUT)
