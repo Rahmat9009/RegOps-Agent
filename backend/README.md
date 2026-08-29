@@ -64,6 +64,22 @@ shadow snapshots. Source PDFs use `runs/{run_id}/source/regulation.pdf`; generat
 audit packages use `runs/{run_id}/audit/audit-package.json`. Objects remain private,
 and audit downloads are backend-generated short-lived HTTPS signed URLs.
 
+Audit upload and signing use separate authority boundaries. The Storage client's
+Storage-scoped credential uploads only the exact run audit object. Independently,
+the attached `regops-api` Cloud Run identity obtains ADC with the explicit
+`cloud-platform` scope and authenticates `google.auth.iam.Signer`; IAM `signBlob`
+targets only `REGOPS_AUDIT_SIGNER_SERVICE_ACCOUNT`. The resulting V4 credential
+names that dedicated signer, which has object-read permission, and signs a bounded
+60–900 second `GET` URL for exactly one private object. No private key, downloaded
+service-account file, self-signing token shortcut or public object permission is
+used. Signed URLs are response-only and are never durable audit state.
+
+If exact-object upload fails, the endpoint retains its sanitized `503`. If upload
+succeeds but IAM signing is temporarily unavailable or returns anything other than
+the exact absolute V4 HTTPS URL, the audit report remains available with
+`audit_package_url: null`; only `AUDIT_SIGNING_UNAVAILABLE` is logged. A later GET
+re-uploads the same run-scoped package and retries one signing operation.
+
 The Workflows execution argument contains only `run_id`, the private source GCS URI,
 the exact lowercase source SHA-256, and `synthetic: true`. Intake does not pass PDF
 bytes or signed URLs and does not wait for analysis. A launch failure records
@@ -117,9 +133,9 @@ or increment the count.
 Preview and revalidation run the same deterministic matcher on a shadow copy. The
 source contract remains immutable. Approval stores `APPROVED_DRAFT` and traverses
 `EXECUTING → REVALIDATING → COMPLETED`; rejection traverses directly to `COMPLETED`
-and is excluded from executed/completed actions. Audit signing refreshes ADC and uses
-IAM Credentials `signBlob` for the exact audit object; no JSON service-account key is
-used or expected.
+and is excluded from executed/completed actions. Audit signing uses separately
+scoped ADC plus IAM Credentials `signBlob` for the exact audit object; no JSON
+service-account key is used or expected.
 
 ## Clean setup and checks (PowerShell)
 

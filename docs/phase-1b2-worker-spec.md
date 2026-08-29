@@ -241,6 +241,14 @@ Resume behavior is deterministic:
 - `EXECUTING` or `REVALIDATING` is delegated to the existing approval/action lifecycle; this
   extraction worker does not replay an approval decision.
 
+Audit-package delivery also separates authority: the Storage client uploads the exact
+run-scoped private object, while separately `cloud-platform`-scoped ADC for the attached
+service identity authenticates IAM `signBlob` against the configured dedicated signer. The
+dedicated signer is the V4 credential identity and has read-only object access. A signing-only
+outage returns the otherwise valid metrics with a null response URL and logs only a fixed code;
+upload failure remains a sanitized service-unavailable response. Signed URLs are never stored as
+durable authoritative report state.
+
 ## 4. Exact pipeline and atomic stage boundaries
 
 Every successful state change uses `RunStateCoordinator` validation. A worker may append only

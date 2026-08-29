@@ -43,6 +43,8 @@ def test_modes_fail_closed_without_persistent_or_trusted_dependencies() -> None:
 
 
 class FakeStorageClient:
+    _credentials = object()
+
     def bucket(self, _name: str) -> object:
         return object()
 
@@ -50,6 +52,16 @@ class FakeStorageClient:
 def test_demo_mode_builds_persistent_adapters_with_backend_reviewer(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    signing: dict[str, object] = {}
+
+    def build_signing(**kwargs: object) -> object:
+        signing.update(kwargs)
+        return object()
+
+    monkeypatch.setattr(
+        "regops_api.composition.build_iam_signing_credentials",
+        build_signing,
+    )
     prefix = "projects/project-1/locations/europe-west3/templates/"
     monkeypatch.setenv("REGOPS_ARMOR_INPUT_TEMPLATE", prefix + "input")
     monkeypatch.setenv("REGOPS_ARMOR_OUTPUT_TEMPLATE", prefix + "output")
@@ -65,6 +77,11 @@ def test_demo_mode_builds_persistent_adapters_with_backend_reviewer(
     assert runtime.worker is not None
     assert runtime.worker._fixture_detector_factory is not None
     assert runtime.worker._runtime_mode is RuntimeMode.DEMO
+    assert signing["signer_service_account"] == (
+        "audit-signer@project-1.iam.gserviceaccount.com"
+    )
+    assert signing["caller_credentials"] is None
+    assert FakeStorageClient._credentials not in signing.values()
 
 
 def test_firestore_serialization_round_trips_strict_models_and_layout_is_stable() -> None:

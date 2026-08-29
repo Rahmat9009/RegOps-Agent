@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, cast
-
+from google.auth.credentials import Credentials
 from google.cloud import firestore
 from google.cloud.storage.client import Client as StorageClient
 from google.cloud.workflows import executions_v1
@@ -19,7 +18,7 @@ from regops_api.internal_auth import GoogleWorkflowIdentityVerifier
 from regops_api.live_fixture import minimum_live_counterfactual
 from regops_api.runtime import RuntimeContainer, StaticReviewerIdentity
 from regops_api.runtime_errors import RuntimeConfigurationError
-from regops_api.storage import GoogleCloudStorageAdapter
+from regops_api.storage import GoogleCloudStorageAdapter, build_iam_signing_credentials
 from regops_api.worker_runtime import MinimumLiveWorker
 from regops_api.workflows import GoogleWorkflowsLauncher
 
@@ -32,8 +31,8 @@ def build_cloud_runtime(
     firestore_client: firestore.Client | None = None,
     storage_client: StorageClient | None = None,
     workflows_client: executions_v1.ExecutionsClient | None = None,
-    signing_credentials: object | None = None,
-    signing_request: object | None = None,
+    iam_caller_credentials: Credentials | None = None,
+    iam_signing_request: object | None = None,
 ) -> RuntimeContainer:
     settings.validate_startup()
     if settings.mode is RuntimeMode.TEST:
@@ -58,16 +57,21 @@ def build_cloud_runtime(
     storage_client = storage_client or StorageClient(project=settings.project_id)
     workflows_client = workflows_client or executions_v1.ExecutionsClient()
     repositories = FirestoreRepositories(firestore_client)
+    try:
+        audit_signing_credentials = build_iam_signing_credentials(
+            signer_service_account=settings.audit_signer_service_account,
+            caller_credentials=iam_caller_credentials,
+            auth_request=iam_signing_request,
+        )
+    except Exception:
+        raise RuntimeConfigurationError(
+            "keyless IAM audit signing configuration is unavailable"
+        ) from None
     storage = GoogleCloudStorageAdapter(
         client=storage_client,
         bucket_name=settings.bucket,
         signed_url_ttl_seconds=settings.signed_url_ttl_seconds,
-        credentials=cast(
-            Any,
-            signing_credentials or getattr(storage_client, "_credentials", None),
-        ),
-        auth_request=signing_request,
-        signer_service_account=settings.audit_signer_service_account,
+        signing_credentials=audit_signing_credentials,
     )
     try:
         analyst_settings = AnalystSettings.from_env(settings)

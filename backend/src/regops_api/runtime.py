@@ -582,5 +582,4 @@ class RuntimeAuditService:
         signed_report = AuditReport.model_validate(
             report.model_dump() | {"audit_package_url": signed_url}
         )
-        self._runtime.repositories.save_audit_report(signed_report)
         return signed_report

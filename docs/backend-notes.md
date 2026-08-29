@@ -1,5 +1,35 @@
 # Backend contract notes
 
+## 2026-08-29 — keyless IAM audit signing correction (no contract change)
+
+The frozen contract and frontend remain unchanged. Inspection of the installed
+libraries proved the prior authority mismatch: `google.cloud.storage.Client.SCOPE`
+contains only `devstorage.full_control`, `devstorage.read_only` and
+`devstorage.read_write`, and the shared Google Cloud client obtains ADC with that
+client scope. The audit adapter reused the Storage client's resulting access token
+for IAM signing. The installed `google.auth.iam.Signer` explicitly requires either
+the `iam` or `cloud-platform` scope, so the old token path could not reliably call
+`signBlob` even when IAM roles and the dedicated signer were otherwise correct.
+
+Composition now establishes two credentials. The Storage client retains upload
+authority for the exact `runs/{run_id}/audit/audit-package.json` object. A separate
+`google.auth.default(scopes=(cloud-platform,))` call preserves the attached
+`regops-api` Cloud Run service identity as caller. A `google.auth.iam.Signer` targets
+only `REGOPS_AUDIT_SIGNER_SERVICE_ACCOUNT`, and a keyless `Signing` adapter supplies
+that dedicated identity to the installed V4 Storage URL generator. The canonical
+request is limited to `GET`, the configured 60–900 second expiry and the exact
+private object. Key-backed/self-signing credentials are rejected; no key file,
+access token, signature, canonical request or URL is logged.
+
+Audit metrics no longer disappear when signing alone is temporarily unavailable.
+Exact-object upload failure still raises the sanitized service-unavailable response.
+After a successful upload, signing failure or an unsafe/malformed URL produces only
+the fixed `AUDIT_SIGNING_UNAVAILABLE` warning and returns a valid `AuditReport` with
+`audit_package_url=null`. The durable report always stores a null URL, so an expired
+URL is never authoritative state; a later GET may upload and sign the same exact
+object again. No cloud diagnostic was run because this task prohibited Cloud Run
+deployment and cloud-state changes.
+
 ## 2026-08-29 — bounded synthetic live obligation detection (no contract change)
 
 The frozen contract and frontend remain unchanged. The hosted minimum-live

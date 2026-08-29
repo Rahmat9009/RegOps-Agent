@@ -15,10 +15,11 @@ from regops_api.runtime import RuntimeContainer, StaticReviewerIdentity
 
 
 class RecordingStorage:
-    def __init__(self) -> None:
+    def __init__(self, *, audit_results: list[str | Exception | None] | None = None) -> None:
         self.sources: list[tuple[str, bytes, str]] = []
         self.deleted_sources: list[tuple[str, str]] = []
         self.audit_packages: list[tuple[str, bytes]] = []
+        self.audit_results = audit_results
 
     def store_source(self, *, run_id: str, content: bytes, content_type: str) -> StoredSourceObject:
         self.sources.append((run_id, content, content_type))
@@ -47,8 +48,13 @@ class RecordingStorage:
             raise ValueError("source binding mismatch")
         return content
 
-    def store_audit_package_and_sign(self, *, run_id: str, content: bytes) -> str:
+    def store_audit_package_and_sign(self, *, run_id: str, content: bytes) -> str | None:
         self.audit_packages.append((run_id, content))
+        if self.audit_results:
+            result = self.audit_results.pop(0)
+            if isinstance(result, Exception):
+                raise result
+            return result
         return (
             f"https://storage.googleapis.com/test-private/runs/{run_id}/audit/"
             "audit-package.json?X-Goog-Signature=test"

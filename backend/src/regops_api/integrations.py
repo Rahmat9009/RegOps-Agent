@@ -59,7 +59,7 @@ class RuntimeStoragePort(Protocol):
         *,
         run_id: str,
         content: bytes,
-    ) -> str: ...
+    ) -> str | None: ...
 
 
 class WorkflowLauncher(Protocol):
