@@ -196,6 +196,39 @@ describe("HttpRegOpsApi request construction", () => {
 
 });
 
+describe("HttpRegOpsApi hosted base URL", () => {
+  // The hosted deployment sets VITE_API_BASE_URL to the absolute Cloud Run
+  // origin; local development leaves it relative for the Vite proxy.
+  const LIVE_BASE_URL = "https://regops-api-vx2qltpxca-ey.a.run.app/api/v1";
+
+  it("targets the absolute Cloud Run origin when given one", async () => {
+    const { fetchImpl, calls } = stubFetch(jsonResponse({ status: "ok", version: "0.1.0" }));
+    const api = new HttpRegOpsApi({ baseUrl: LIVE_BASE_URL, fetchImpl });
+
+    await api.getHealth();
+
+    expect(calls[0]?.url).toBe(`${LIVE_BASE_URL}/health`);
+  });
+
+  it("does not double the slash when the configured base URL has a trailing one", async () => {
+    const { fetchImpl, calls } = stubFetch(jsonResponse({ run_id: "RUN-001", state: "INGESTED" }));
+    const api = new HttpRegOpsApi({ baseUrl: `${LIVE_BASE_URL}/`, fetchImpl });
+
+    await api.getRun("RUN-001");
+
+    expect(calls[0]?.url).toBe(`${LIVE_BASE_URL}/runs/RUN-001`);
+  });
+
+  it("keeps the relative default when no base URL is configured", async () => {
+    const { fetchImpl, calls } = stubFetch(jsonResponse({ status: "ok", version: "0.1.0" }));
+    const api = new HttpRegOpsApi({ fetchImpl });
+
+    await api.getHealth();
+
+    expect(calls[0]?.url).toBe("/api/v1/health");
+  });
+});
+
 describe("HttpRegOpsApi findings query construction", () => {
   const emptyList = { items: [], total: 0, limit: 25, offset: 0, by_severity: { low: 0, medium: 0, high: 0 } };
 

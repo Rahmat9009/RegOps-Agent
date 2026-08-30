@@ -10,6 +10,7 @@
 import type { RegOpsApi } from "./client";
 import { HttpRegOpsApi } from "./httpAdapter";
 import { MockRegOpsApi } from "./mockAdapter";
+import { resolveApiBaseUrl, resolveApiMode } from "./mode";
 
 export type { ListFindingsParams, RegOpsApi } from "./client";
 export * from "./types";
@@ -17,12 +18,12 @@ export { isRegOpsApiError, RegOpsApiError, toRegOpsApiError } from "./errors";
 export type { ApiErrorKind } from "./errors";
 export { SHADOW_COPY_NOTICE, SYNTHETIC_NOTICE } from "./mockData";
 
-export type ApiMode = "mock" | "http";
+export type { ApiMode } from "./mode";
+export { DEFAULT_API_BASE_URL, resolveApiBaseUrl, resolveApiMode } from "./mode";
 
-export const API_MODE: ApiMode =
-  (import.meta.env.VITE_API_MODE ?? "mock").toLowerCase() === "http" ? "http" : "mock";
+export const API_MODE = resolveApiMode(import.meta.env.VITE_API_MODE);
 
-export const API_BASE_URL: string = import.meta.env.VITE_API_BASE_URL ?? "/api/v1";
+export const API_BASE_URL: string = resolveApiBaseUrl(import.meta.env.VITE_API_BASE_URL);
 
 function createApi(): RegOpsApi {
   if (API_MODE === "http") {

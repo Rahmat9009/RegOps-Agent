@@ -13,6 +13,11 @@ export default defineConfig({
       "@": fileURLToPath(new URL("./src", import.meta.url)),
     },
   },
+  build: {
+    // No source maps in the deployed bundle. The published assets carry only the
+    // two public VITE_ variables; they should not also ship original sources.
+    sourcemap: false,
+  },
   server: {
     port: 5173,
     proxy: {
