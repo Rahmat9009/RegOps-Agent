@@ -359,6 +359,12 @@ function AuditContent({ report, onReload }: { report: AuditReport; onReload: () 
  * The closing statement: what this run ended up doing. Read entirely from the
  * audit record — an approved amendment appears in the report as an
  * `APPROVED_DRAFT`, and a run where none does executed no amendment.
+ *
+ * The three figures below the sentence are the same three numbers the sentence
+ * already carries, pulled out so the closing screen can be read at a glance.
+ * They are counts the audit record returned; nothing here is derived, scored or
+ * inferred. `outcome--audit` scopes the treatment to this page: the approval
+ * and rejection plates on the review screen use the shared component unchanged.
  */
 function AuditOutcome({
   amendmentApproved,
@@ -373,7 +379,9 @@ function AuditOutcome({
 }) {
   return (
     <section
-      className={amendmentApproved ? "outcome outcome--verified" : "outcome"}
+      className={
+        amendmentApproved ? "outcome outcome--audit outcome--verified" : "outcome outcome--audit"
+      }
       aria-label="Run outcome"
     >
       <span className="outcome__icon" aria-hidden="true">
@@ -401,6 +409,20 @@ function AuditOutcome({
             </>
           )}
         </p>
+        <dl className="outcome__figures">
+          <div className="outcome__figure">
+            <dt className="outcome__figure-label">Actions carried out</dt>
+            <dd className="outcome__figure-value">{formatCount(actions)}</dd>
+          </div>
+          <div className="outcome__figure">
+            <dt className="outcome__figure-label">Findings resolved</dt>
+            <dd className="outcome__figure-value">{formatCount(resolved)}</dd>
+          </div>
+          <div className="outcome__figure">
+            <dt className="outcome__figure-label">Findings remaining</dt>
+            <dd className="outcome__figure-value">{formatCount(remaining)}</dd>
+          </div>
+        </dl>
       </div>
     </section>
   );

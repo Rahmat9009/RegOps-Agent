@@ -1095,11 +1095,28 @@ a.runchip:hover {
   transition: background-color var(--dur-slow) var(--ease);
 }
 
-.rail__step--done::before,
-.rail__step--current::before,
-.rail__step--review::before,
-.rail__step--failed::before {
+/* A segment takes the meaning of the node it leads into: teal behind a stage
+   that is done, and for the stage the run is actually sitting in, that stage's
+   own colour — blue in flight, amber parked on a decision, coral on a
+   recoverable failure.
+
+   These carry `:not(:first-child)` to match the specificity of the base track
+   rule above. Without it the base rule outranks them and every segment stays
+   grey, whatever state the run is in. */
+.rail__step--done:not(:first-child)::before {
   background: var(--verified-solid);
+}
+
+.rail__step--current:not(:first-child)::before {
+  background: var(--info-solid);
+}
+
+.rail__step--review:not(:first-child)::before {
+  background: var(--review-solid);
+}
+
+.rail__step--failed:not(:first-child)::before {
+  background: var(--critical-solid);
 }
 
 .rail__node {
@@ -1117,11 +1134,19 @@ a.runchip:hover {
   transition:
     background-color var(--dur-slow) var(--ease),
     border-color var(--dur-slow) var(--ease),
+    transform var(--dur-slow) var(--ease),
     color var(--dur-slow) var(--ease);
 }
 
+/* The stage the run is in reads slightly larger than its neighbours. A
+   transform, so nothing on the rail moves and no label reflows as the run
+   walks from one stage to the next. */
+.rail__step[aria-current="step"] .rail__node {
+  transform: scale(1.1);
+}
+
 .rail__label {
-  font-size: var(--step--2);
+  font-size: var(--step--1);
   font-weight: 600;
   color: var(--ink-3);
   line-height: 1.25;
@@ -2158,6 +2183,57 @@ a.runchip:hover {
   margin-top: var(--space-1);
 }
 
+/* ---- the audit page's closing plate ----------------------------------- */
+
+/* Scoped to `.outcome--audit`. The decision plates on the review screen —
+   approved and rejected — carry the shared component and are untouched. */
+
+.outcome--audit .outcome__figures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3) var(--space-6);
+  margin-top: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border-hair);
+}
+
+.outcome--audit .outcome__figure {
+  min-width: 0;
+}
+
+.outcome--audit .outcome__figure-label {
+  font-family: var(--font-mono);
+  font-size: var(--eyebrow-size);
+  letter-spacing: var(--eyebrow-tracking);
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.outcome--audit .outcome__figure-value {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--step-3);
+  font-weight: 660;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* One entrance, once, when the finished report renders — the closing beat of
+   the workflow. It never repeats, and prefers-reduced-motion (base.css) drops
+   it to its resting state. */
+.outcome--audit .outcome__icon {
+  animation: outcome-seal var(--dur-slow) var(--ease) 1 both;
+}
+
+@keyframes outcome-seal {
+  from {
+    opacity: 0;
+    transform: scale(0.88);
+  }
+}
+
 /* --------------------------------------------------- the review workspace */
 
 /* Evidence reads top-to-bottom on the left in normal page flow; the decision
@@ -2304,7 +2380,7 @@ a.runchip:hover {
   }
 
   /* Eleven horizontal stages stop being readable well before mobile, so the
-     rail turns vertical and keeps every label at full size. */
+     rail turns vertical. Labels are already at full size in both directions. */
   .rail {
     grid-auto-flow: row;
     grid-auto-columns: auto;
@@ -2328,10 +2404,6 @@ a.runchip:hover {
     left: 0.9375rem;
     right: auto;
     width: 2px;
-  }
-
-  .rail__label {
-    font-size: var(--step--1);
   }
 
   /* One evidence-first column: finding, evidence, action, disclosure, then the
@@ -2520,6 +2592,18 @@ a.runchip:hover {
   }
 
   .runcard__title {
+    font-size: var(--step-2);
+  }
+
+  /* Three short counts stay one readable row rather than a 150px stack, so the
+     closing plate and the synthetic disclosure under it still arrive together. */
+  .outcome--audit .outcome__figures {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--space-3);
+  }
+
+  .outcome--audit .outcome__figure-value {
     font-size: var(--step-2);
   }
 }
