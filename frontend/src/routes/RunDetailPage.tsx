@@ -6,7 +6,11 @@
 // The timeline shows ONLY the server-recorded transitions the API returns, with
 // their recorded actor, timestamp and safe reason label. No agent reasoning or
 // chain-of-thought is shown, because none is returned and none may be invented.
+// Nothing on this screen is reconstructed from what the browser happened to see:
+// the client's only contribution is noticing which entries are new to it, so that
+// exactly those animate in.
 
+import { useEffect, useRef } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
   Clock,
@@ -39,7 +43,7 @@ export function RunDetailPage() {
   if (loading && !run) {
     return (
       <>
-        <PageHeader title="Run detail" />
+        <PageHeader title="Run detail" eyebrow="Run" />
         <Panel title="Run" icon={Radar}>
           <LoadingState label="Loading run…" />
         </Panel>
@@ -50,7 +54,7 @@ export function RunDetailPage() {
   if (error && !run) {
     return (
       <>
-        <PageHeader title="Run detail" />
+        <PageHeader title="Run detail" eyebrow="Run" />
         <Panel title="Run" icon={Radar}>
           <ErrorState error={error} onRetry={refresh} />
         </Panel>
@@ -105,7 +109,12 @@ export function RunDetailPage() {
       ) : null}
 
       {run.state === "FAILED_RECOVERABLE" ? (
-        <Notice tone="review" title="Recoverable failure — resuming from checkpoint" icon={RefreshCw} live>
+        <Notice
+          tone="review"
+          title="Recoverable failure — resuming from checkpoint"
+          icon={RefreshCw}
+          live
+        >
           A partition failed. The run is retrying and will continue to a later state on its own. The
           recovery record below reports the checkpoint, the attempt count and the sanitized error
           the API returned.
@@ -127,41 +136,52 @@ export function RunDetailPage() {
       ) : null}
 
       <Panel
-        title="Processing stages"
+        title="Run lifecycle"
         icon={Layers}
-        description="The pipeline states declared by the API contract. The current stage is marked."
+        description="The pipeline states declared by the API contract. The current stage is marked with its name, not only its colour."
+        tone={run.state === "AWAITING_APPROVAL" ? "review" : undefined}
       >
-        <PipelineMap current={run.state} />
+        <div className="stack">
+          <PipelineMap current={run.state} />
+
+          <ProgressMeter
+            label="Documents processed"
+            percent={run.progress.percent}
+            detail={`${formatCount(run.progress.documents_processed)} of ${formatCount(
+              run.progress.documents_total,
+            )} · ${formatPercent(run.progress.percent)}`}
+            tone={run.state === "COMPLETED" ? "verified" : "info"}
+          />
+
+          {partitionsTotal > 0 ? (
+            <ProgressMeter
+              label="Partition progress"
+              percent={((run.progress.partitions_complete ?? 0) / partitionsTotal) * 100}
+              detail={`${formatCount(run.progress.partitions_complete ?? 0)} of ${formatCount(
+                partitionsTotal,
+              )} partitions`}
+              tone={run.state === "FAILED_RECOVERABLE" ? "review" : "info"}
+            />
+          ) : (
+            <p className="field__hint">
+              Partition counters are reserved for a later phase and are reported as zero for this
+              run.
+            </p>
+          )}
+        </div>
       </Panel>
 
       <div className="grid grid--2">
-        <Panel title="Progress" icon={Radar}>
-          <div className="stack">
-            <ProgressMeter
-              label="Documents processed"
-              percent={run.progress.percent}
-              detail={`${formatCount(run.progress.documents_processed)} of ${formatCount(
-                run.progress.documents_total,
-              )} · ${formatPercent(run.progress.percent)}`}
-              tone={run.state === "COMPLETED" ? "verified" : "info"}
-            />
+        <Panel
+          title="Recorded state transitions"
+          icon={Clock}
+          description="The run's server-recorded history, oldest first."
+        >
+          <TransitionTimeline transitions={run.transitions} />
+        </Panel>
 
-            {partitionsTotal > 0 ? (
-              <ProgressMeter
-                label="Partition progress"
-                percent={((run.progress.partitions_complete ?? 0) / partitionsTotal) * 100}
-                detail={`${formatCount(run.progress.partitions_complete ?? 0)} of ${formatCount(
-                  partitionsTotal,
-                )} partitions`}
-                tone={run.state === "FAILED_RECOVERABLE" ? "review" : "info"}
-              />
-            ) : (
-              <Notice tone="info">
-                Partition counters are reserved for a later phase and are reported as zero for this
-                run.
-              </Notice>
-            )}
-
+        <div className="stack">
+          <Panel title="Run record" icon={Radar}>
             <dl className="dl">
               <dt>Run</dt>
               <dd>
@@ -186,39 +206,30 @@ export function RunDetailPage() {
                     : "Stopped — the run is waiting on a human decision"}
               </dd>
             </dl>
-          </div>
-        </Panel>
+          </Panel>
 
-        <Panel
-          title="State transitions"
-          icon={Clock}
-          description="The run's server-recorded history, oldest first."
-        >
-          <TransitionTimeline transitions={run.transitions} />
-        </Panel>
-      </div>
+          <Panel
+            title="Recovery"
+            icon={RefreshCw}
+            description="Checkpoint, attempt count and sanitized error reported by the API."
+            tone={run.state === "FAILED_RECOVERABLE" ? "review" : undefined}
+          >
+            <RecoveryDetails recovery={run.recovery} />
+          </Panel>
 
-      <div className="grid grid--2">
-        <Panel
-          title="Recovery"
-          icon={RefreshCw}
-          description="Checkpoint, attempt count and sanitized error reported by the API."
-        >
-          <RecoveryDetails recovery={run.recovery} />
-        </Panel>
-
-        <Panel
-          title="Change detection"
-          icon={FileDiff}
-          description="Whether this source document differs from the previously analysed one."
-        >
-          <ChangeDetectionDetails detection={run.change_detection} />
-        </Panel>
+          <Panel
+            title="Change detection"
+            icon={FileDiff}
+            description="Whether this source document differs from the previously analysed one."
+          >
+            <ChangeDetectionDetails detection={run.change_detection} />
+          </Panel>
+        </div>
       </div>
 
       {pending.length > 0 ? (
-        <Panel title="Pending approvals" icon={UserCheck}>
-          <ul className="stack stack--tight" style={{ listStyle: "none" }}>
+        <Panel title="Pending approvals" icon={UserCheck} tone="review">
+          <ul className="stack stack--tight list-plain">
             {pending.map((approval) => (
               <li key={approval.approval_id}>
                 <Link
@@ -246,13 +257,34 @@ export function RunDetailPage() {
   );
 }
 
+function transitionKey(transition: RunTransition, index: number): string {
+  return `${index}:${transition.from_state ?? ""}->${transition.to_state}@${transition.occurred_at}`;
+}
+
 /**
  * The run's authoritative transition history, rendered oldest to newest exactly
  * as the API ordered it. Each entry shows the recorded state change, when it
  * happened, which backend actor recorded it and the safe reason label — nothing
  * is inferred from what this browser happened to observe.
+ *
+ * The only client-side judgement is which entries this screen had not rendered
+ * before. Those, and only those, animate in; a history that was already on
+ * screen is never replayed.
  */
 function TransitionTimeline({ transitions }: { transitions: RunTransition[] }) {
+  const seen = useRef<Set<string> | null>(null);
+  const keys = transitions.map(transitionKey);
+
+  // On the first render nothing is new — the reader is arriving at an existing
+  // history, not watching it happen.
+  const firstRender = seen.current === null;
+  const isNew = keys.map((key) => !firstRender && !seen.current?.has(key));
+
+  useEffect(() => {
+    if (seen.current === null) seen.current = new Set(keys);
+    else for (const key of keys) seen.current.add(key);
+  });
+
   if (transitions.length === 0) {
     return (
       <EmptyState icon={Clock} title="No transitions recorded">
@@ -261,6 +293,8 @@ function TransitionTimeline({ transitions }: { transitions: RunTransition[] }) {
     );
   }
 
+  const lastIndex = transitions.length - 1;
+
   return (
     <>
       <ol className="timeline">
@@ -268,11 +302,13 @@ function TransitionTimeline({ transitions }: { transitions: RunTransition[] }) {
           const descriptor = RUN_STATE[transition.to_state];
           const Icon = descriptor.icon;
           const from = transition.from_state ? RUN_STATE[transition.from_state].label : null;
+
+          const classes = ["timeline__item", `timeline__item--${descriptor.tone}`];
+          if (index === lastIndex) classes.push("timeline__item--latest");
+          if (isNew[index]) classes.push("timeline__item--new");
+
           return (
-            <li
-              key={`${transition.to_state}-${transition.occurred_at}-${index}`}
-              className="timeline__item"
-            >
+            <li key={keys[index]} className={classes.join(" ")}>
               <span className="timeline__dot" aria-hidden="true">
                 <Icon size={13} />
               </span>
@@ -280,16 +316,9 @@ function TransitionTimeline({ transitions }: { transitions: RunTransition[] }) {
                 <StatusBadge descriptor={descriptor} srPrefix="State:" />
                 <span className="timeline__time">
                   {formatTime(transition.occurred_at)} ·{" "}
-                  {from ? (
-                    <>
-                      from <strong>{from}</strong>
-                    </>
-                  ) : (
-                    "first recorded state"
-                  )}{" "}
-                  · recorded by <Mono>{transition.actor}</Mono>
+                  {from ? `from ${from}` : "first recorded state"} · {transition.actor}
                 </span>
-                <span className="field__hint">
+                <span className="timeline__reason">
                   {transition.reason ?? descriptor.description}
                 </span>
               </span>

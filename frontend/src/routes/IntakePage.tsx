@@ -13,6 +13,7 @@ import {
   FileText,
   FlaskConical,
   Loader2,
+  ScanLine,
   Upload,
   X,
 } from "lucide-react";
@@ -106,7 +107,7 @@ export function IntakePage() {
           >
             <div className="stack">
               {file ? (
-                <div className="filecard">
+                <div className={submitting ? "filecard scan" : "filecard"}>
                   <FileText size={20} aria-hidden="true" />
                   <span className="filecard__meta">
                     <span className="filecard__name">{file.name}</span>
@@ -114,17 +115,24 @@ export function IntakePage() {
                       {formatBytes(file.size)} · {file.type || "unknown type"}
                     </span>
                   </span>
-                  <button
-                    type="button"
-                    className="btn btn--sm"
-                    onClick={() => {
-                      chooseFile(null);
-                      if (inputRef.current) inputRef.current.value = "";
-                    }}
-                  >
-                    <X size={14} aria-hidden="true" />
-                    Remove
-                  </button>
+                  {submitting ? (
+                    <span className="badge badge--info">
+                      <ScanLine size={14} aria-hidden="true" />
+                      Reading document
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      className="btn btn--sm"
+                      onClick={() => {
+                        chooseFile(null);
+                        if (inputRef.current) inputRef.current.value = "";
+                      }}
+                    >
+                      <X size={14} aria-hidden="true" />
+                      Remove
+                    </button>
+                  )}
                 </div>
               ) : (
                 <div
@@ -142,11 +150,24 @@ export function IntakePage() {
                   }}
                   onClick={() => inputRef.current?.click()}
                 >
-                  <Upload size={24} aria-hidden="true" />
-                  <span>Drag a PDF here, or choose a file</span>
-                  <span className="dropzone__hint">
-                    Nothing is uploaded until you confirm and start the analysis.
+                  <span className="dropzone__icon" aria-hidden="true">
+                    <FileText size={26} />
                   </span>
+                  <span className="dropzone__title">Drag a PDF here, or choose a file</span>
+                  <span className="dropzone__hint">
+                    Nothing is uploaded until you confirm the disclosure and start the analysis.
+                  </span>
+                  <ul className="dropzone__reqs">
+                    <li>
+                      <Tag icon={FileText}>PDF</Tag>
+                    </li>
+                    <li>
+                      <Tag icon={FlaskConical}>Synthetic only</Tag>
+                    </li>
+                    <li>
+                      <Tag>One document per run</Tag>
+                    </li>
+                  </ul>
                 </div>
               )}
 
@@ -221,7 +242,12 @@ export function IntakePage() {
                 </Notice>
               ) : null}
 
-              {!file || !ack ? (
+              {submitting ? (
+                <Notice tone="info" title="Starting the analysis" icon={ScanLine} live>
+                  The document is being sent to the API and a run is being created. The console
+                  moves to the run record as soon as it is accepted.
+                </Notice>
+              ) : !file || !ack ? (
                 <Notice tone="info">
                   {!file && !ack
                     ? "Choose a PDF and confirm the synthetic-data disclosure to continue."
@@ -232,11 +258,11 @@ export function IntakePage() {
               ) : null}
 
               <div className="row">
-                <button type="submit" className="btn btn--primary" disabled={!canSubmit}>
+                <button type="submit" className="btn btn--primary btn--lg" disabled={!canSubmit}>
                   {submitting ? (
-                    <Loader2 size={16} aria-hidden="true" className="spin" />
+                    <Loader2 size={17} aria-hidden="true" className="spin" />
                   ) : (
-                    <ArrowRight size={16} aria-hidden="true" />
+                    <ArrowRight size={17} aria-hidden="true" />
                   )}
                   {submitting ? "Starting analysis…" : "Confirm and start analysis"}
                 </button>
@@ -311,8 +337,8 @@ function AcceptedRun({ run, onStartAnother }: { run: Run; onStartAnother: () => 
       </Panel>
 
       <div className="row">
-        <Link className="btn btn--primary" to={`/runs/${run.run_id}`}>
-          <ArrowRight size={16} aria-hidden="true" />
+        <Link className="btn btn--primary btn--lg" to={`/runs/${run.run_id}`}>
+          <ArrowRight size={17} aria-hidden="true" />
           Open run detail
         </Link>
         <Link className="btn" to="/">

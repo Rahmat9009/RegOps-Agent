@@ -2,21 +2,30 @@
 //
 // Executed actions, idempotency results, revalidation outcome, processing time,
 // evaluation metrics, and the download-audit-package control.
+//
+// Everything on this screen comes from `GET /runs/{run_id}/audit`. The report
+// carries no transition history and no recovery block of its own, so neither is
+// reconstructed here: the recovery signal shown is the one the report actually
+// contains, `evaluation.resume_success_rate`.
 
 import { useCallback } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
+  CheckCircle2,
   Download,
   FileCheck2,
+  FileSignature,
   FlaskConical,
   Gauge,
+  LifeBuoy,
   Repeat,
   RefreshCw,
   Timer,
+  XCircle,
 } from "lucide-react";
 
-import { api, type AuditEvaluation, type AuditReport } from "@/lib/api";
-import { formatCount, formatDateTime, formatRatio, formatSeconds } from "@/lib/format";
+import { api, type AuditEvaluation, type AuditReport, type ProposedAction } from "@/lib/api";
+import { formatCount, formatDateTime, formatRatio, formatSeconds, pluralize } from "@/lib/format";
 import { ACTION_AUTONOMY, ACTION_STATUS, ACTION_TYPE } from "@/lib/presentation";
 import { isSafeAuditPackageUrl } from "@/lib/url";
 import { useAsync } from "@/hooks/useAsync";
@@ -105,6 +114,14 @@ function AuditContent({ report, onReload }: { report: AuditReport; onReload: () 
   const packageUrlRejected =
     report.audit_package_url != null && report.audit_package_url !== "" && packageUrl === null;
 
+  // A rejected action was never carried out, so it must never appear in a table
+  // headed "executed". The contract's audit does not return rejected actions, but
+  // if one ever arrived it is separated here rather than silently counted.
+  const carriedOut = report.executed_actions.filter((action) => action.status !== "REJECTED");
+  const notCarriedOut = report.executed_actions.filter((action) => action.status === "REJECTED");
+  const approvedDrafts = carriedOut.filter((action) => action.status === "APPROVED_DRAFT");
+  const amendmentApproved = approvedDrafts.length > 0;
+
   return (
     <>
       <PageHeader
@@ -123,6 +140,13 @@ function AuditContent({ report, onReload }: { report: AuditReport; onReload: () 
         }
       />
 
+      <AuditOutcome
+        amendmentApproved={amendmentApproved}
+        resolved={report.revalidation.findings_resolved}
+        remaining={report.revalidation.findings_remaining}
+        actions={carriedOut.length}
+      />
+
       <Notice tone="review" title="Synthetic run record" icon={FlaskConical}>
         This audit covers a synthetic demonstration run. Approved amendments exist as drafts against
         shadow copies; no real contract was changed and no legal determination was made.
@@ -130,136 +154,133 @@ function AuditContent({ report, onReload }: { report: AuditReport; onReload: () 
 
       <div className="grid grid--4">
         <Stat
+          index={0}
           label="Documents processed"
           value={formatCount(report.processing.documents_processed)}
-          icon={<FileCheck2 size={14} aria-hidden="true" />}
+          icon={<FileCheck2 size={13} aria-hidden="true" />}
         />
         <Stat
+          index={1}
           label="Processing time"
           value={formatSeconds(report.processing.total_seconds)}
-          icon={<Timer size={14} aria-hidden="true" />}
+          icon={<Timer size={13} aria-hidden="true" />}
         />
         <Stat
+          index={2}
           label="Findings resolved"
           value={formatCount(report.revalidation.findings_resolved)}
-          tone="verified"
+          tone={report.revalidation.findings_resolved > 0 ? "verified" : "neutral"}
           note="Confirmed by revalidation"
-          icon={<RefreshCw size={14} aria-hidden="true" />}
+          icon={<RefreshCw size={13} aria-hidden="true" />}
         />
         <Stat
+          index={3}
           label="Findings remaining"
           value={formatCount(report.revalidation.findings_remaining)}
           tone={report.revalidation.findings_remaining > 0 ? "review" : "verified"}
           note={report.revalidation.findings_remaining > 0 ? "Still detected" : "None remaining"}
-          icon={<Gauge size={14} aria-hidden="true" />}
+          icon={<Gauge size={13} aria-hidden="true" />}
         />
       </div>
 
       <Panel
-        title="Executed actions"
+        title="Actions carried out"
         icon={FileCheck2}
-        description="Every action this run carried out, with its final status."
+        description="Every action this run actually carried out, with its final status. An action a reviewer rejected never runs and is not listed here."
         flush
       >
-        {report.executed_actions.length === 0 ? (
+        {carriedOut.length === 0 ? (
           <div className="panel__body">
-            <EmptyState title="No actions were executed">
-              The run completed without any action being carried out.
+            <EmptyState title="No actions were carried out">
+              The run completed without any action being executed. A rejected amendment is a valid
+              outcome that executes nothing.
             </EmptyState>
           </div>
         ) : (
-          <div className="table-wrap">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th scope="col">Action</th>
-                  <th scope="col">Type</th>
-                  <th scope="col">Autonomy</th>
-                  <th scope="col">Status</th>
-                  <th scope="col">Finding</th>
-                  <th scope="col">Idempotency key</th>
-                </tr>
-              </thead>
-              <tbody>
-                {report.executed_actions.map((action) => (
-                  <tr key={action.action_id}>
-                    <th scope="row" style={{ background: "transparent", textTransform: "none" }}>
-                      <Mono>{action.action_id}</Mono>
-                    </th>
-                    <td>
-                      <StatusBadge descriptor={ACTION_TYPE[action.type]} srPrefix="Type:" />
-                    </td>
-                    <td>
-                      <StatusBadge
-                        descriptor={ACTION_AUTONOMY[action.autonomy]}
-                        srPrefix="Autonomy:"
-                      />
-                    </td>
-                    <td>
-                      <StatusBadge descriptor={ACTION_STATUS[action.status]} srPrefix="Status:" />
-                    </td>
-                    <td>
-                      <Link to={`/findings/${action.finding_id}`}>
-                        <Mono>{action.finding_id}</Mono>
-                      </Link>
-                    </td>
-                    <td>
-                      <Mono>{action.idempotency_key}</Mono>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <ActionTable actions={carriedOut} />
         )}
       </Panel>
 
+      {notCarriedOut.length > 0 ? (
+        <Panel
+          title="Recorded but not executed"
+          icon={XCircle}
+          tone="critical"
+          description="Actions the API returned with a rejected status. Nothing was written for any of them."
+          flush
+        >
+          <ActionTable actions={notCarriedOut} />
+        </Panel>
+      ) : null}
+
       <div className="grid grid--2">
         <Panel
-          title="Idempotency"
+          title="Duplicate prevention"
           icon={Repeat}
           description="Every action carries an idempotency key. Repeated attempts are detected and stopped before execution."
         >
           <div className="stack">
-            <div className="grid grid--2">
+            <div className="grid grid--4">
               <Stat
-                label="Duplicate attempts prevented"
+                index={0}
+                label="Duplicates prevented"
                 value={formatCount(report.idempotency.duplicate_actions_prevented)}
                 tone="verified"
-                note="Detected by idempotency key and stopped"
+                note="Stopped before execution"
               />
               <Stat
+                index={1}
                 label="Duplicate attempt rate"
                 value={formatRatio(report.idempotency.duplicate_action_rate)}
-                note="Share of attempts that were duplicates"
+                note="Share of attempts that repeated a key"
               />
             </div>
             <p className="field__hint">
               Both figures describe attempts that were detected as duplicates and stopped before
-              execution; neither indicates that a duplicate action ran. The rate is the share of
-              all action attempts that repeated an idempotency key — the total attempt count is
-              not part of the audit record, so a prevented count above zero always comes with a
-              rate above zero.
+              execution; neither indicates that a duplicate action ran. The rate is the share of all
+              action attempts that repeated an idempotency key — the total attempt count is not part
+              of the audit record, so a prevented count above zero always comes with a rate above
+              zero.
             </p>
           </div>
         </Panel>
 
         <Panel
-          title="Revalidation"
-          icon={RefreshCw}
-          description="How many detected findings this run's executed actions resolved. A run whose amendment was rejected executes nothing and revalidates nothing, so it resolves none."
+          title="Recovery and revalidation"
+          icon={LifeBuoy}
+          description="How the run coped with failure, and how many detected findings its executed actions resolved."
         >
-          <div className="grid grid--2">
-            <Stat
-              label="Resolved"
-              value={formatCount(report.revalidation.findings_resolved)}
-              tone="verified"
-            />
-            <Stat
-              label="Remaining"
-              value={formatCount(report.revalidation.findings_remaining)}
-              tone={report.revalidation.findings_remaining > 0 ? "review" : "verified"}
-            />
+          <div className="stack">
+            {report.evaluation ? (
+              <ScoreMeter
+                label="Resume success rate"
+                value={report.evaluation.resume_success_rate}
+                description="Share of recoverable failures that resumed from a checkpoint successfully. This is the only recovery figure the audit record carries."
+                tone={report.evaluation.resume_success_rate >= 0.85 ? "verified" : "review"}
+              />
+            ) : (
+              <p className="field__hint">
+                The API returned no evaluation block, so this report carries no recovery figure.
+              </p>
+            )}
+            <div className="grid grid--4">
+              <Stat
+                index={0}
+                label="Resolved"
+                value={formatCount(report.revalidation.findings_resolved)}
+                tone={report.revalidation.findings_resolved > 0 ? "verified" : "neutral"}
+              />
+              <Stat
+                index={1}
+                label="Remaining"
+                value={formatCount(report.revalidation.findings_remaining)}
+                tone={report.revalidation.findings_remaining > 0 ? "review" : "verified"}
+              />
+            </div>
+            <p className="field__hint">
+              A run whose amendment was rejected executes nothing and revalidates nothing, so it
+              resolves none.
+            </p>
           </div>
         </Panel>
       </div>
@@ -299,24 +320,18 @@ function AuditContent({ report, onReload }: { report: AuditReport; onReload: () 
           <div className="stack">
             <p>
               The audit package bundles the executed actions, evidence chains, and revalidation
-              results for this run. The link is a short-lived signed <Mono>https</Mono> URL issued
-              by the backend and expires on its own.
+              results for this run. The link is a short-lived signed <Mono>https</Mono> URL issued by
+              the backend and expires on its own.
             </p>
-            <a
-              className="btn btn--primary"
-              href={packageUrl}
-              download
-              rel="noreferrer"
-              target="_blank"
-            >
-              <Download size={16} aria-hidden="true" />
+            <a className="btn btn--primary btn--lg" href={packageUrl} download rel="noreferrer" target="_blank">
+              <Download size={17} aria-hidden="true" />
               Download audit package
             </a>
           </div>
         ) : (
           <div className="stack">
-            <button type="button" className="btn" disabled aria-describedby="package-unavailable">
-              <Download size={16} aria-hidden="true" />
+            <button type="button" className="btn btn--lg" disabled aria-describedby="package-unavailable">
+              <Download size={17} aria-hidden="true" />
               Download audit package
             </button>
             <p className="field__hint" id="package-unavailable">
@@ -337,5 +352,101 @@ function AuditContent({ report, onReload }: { report: AuditReport; onReload: () 
         )}
       </Panel>
     </>
+  );
+}
+
+/**
+ * The closing statement: what this run ended up doing. Read entirely from the
+ * audit record — an approved amendment appears in the report as an
+ * `APPROVED_DRAFT`, and a run where none does executed no amendment.
+ */
+function AuditOutcome({
+  amendmentApproved,
+  resolved,
+  remaining,
+  actions,
+}: {
+  amendmentApproved: boolean;
+  resolved: number;
+  remaining: number;
+  actions: number;
+}) {
+  return (
+    <section
+      className={amendmentApproved ? "outcome outcome--verified" : "outcome"}
+      aria-label="Run outcome"
+    >
+      <span className="outcome__icon" aria-hidden="true">
+        {amendmentApproved ? <CheckCircle2 size={26} /> : <FileSignature size={26} />}
+      </span>
+      <div className="outcome__body">
+        <strong className="outcome__title">
+          {amendmentApproved
+            ? "An amendment was approved and stored as a draft"
+            : "No amendment was approved in this run"}
+        </strong>
+        <p className="outcome__text">
+          {amendmentApproved ? (
+            <>
+              {pluralize(actions, "action")} carried out. Revalidation confirmed{" "}
+              {pluralize(resolved, "finding")} resolved, with {formatCount(remaining)} still
+              detected. The draft sits against a synthetic contract&rsquo;s shadow copy; no real
+              contract was changed.
+            </>
+          ) : (
+            <>
+              {pluralize(actions, "action")} carried out, none of them an amendment. A rejected
+              amendment executes nothing and revalidates nothing, which is why{" "}
+              {pluralize(resolved, "finding")} were resolved and {formatCount(remaining)} remain.
+            </>
+          )}
+        </p>
+      </div>
+    </section>
+  );
+}
+
+function ActionTable({ actions }: { actions: ProposedAction[] }) {
+  return (
+    <div className="table-wrap">
+      <table className="table table--dense">
+        <thead>
+          <tr>
+            <th scope="col">Action</th>
+            <th scope="col">Type</th>
+            <th scope="col">Autonomy</th>
+            <th scope="col">Status</th>
+            <th scope="col">Finding</th>
+            <th scope="col">Idempotency key</th>
+          </tr>
+        </thead>
+        <tbody>
+          {actions.map((action) => (
+            <tr key={action.action_id}>
+              <th scope="row" className="rowhead">
+                <Mono>{action.action_id}</Mono>
+              </th>
+              <td>
+                <StatusBadge descriptor={ACTION_TYPE[action.type]} srPrefix="Type:" />
+              </td>
+              <td>
+                <StatusBadge descriptor={ACTION_AUTONOMY[action.autonomy]} srPrefix="Autonomy:" />
+              </td>
+              <td>
+                <StatusBadge descriptor={ACTION_STATUS[action.status]} srPrefix="Status:" />
+              </td>
+              <td>
+                <Link to={`/findings/${action.finding_id}`}>
+                  <Mono>{action.finding_id}</Mono>
+                </Link>
+              </td>
+              <td>
+                <Mono>{action.idempotency_key}</Mono>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }

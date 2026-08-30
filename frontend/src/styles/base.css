@@ -1,4 +1,4 @@
-/* base.css — Reset and element defaults. */
+/* base.css — Reset, element defaults and the accessibility floor. */
 
 *,
 *::before,
@@ -21,6 +21,7 @@ body {
   font-family: var(--font-sans);
   font-size: var(--step-0);
   line-height: 1.55;
+  font-feature-settings: "cv05" 1;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizelegibility;
 }
@@ -29,17 +30,20 @@ h1,
 h2,
 h3,
 h4 {
-  line-height: 1.25;
+  font-family: var(--font-display);
+  line-height: 1.2;
   font-weight: 650;
-  letter-spacing: -0.011em;
+  letter-spacing: -0.014em;
   text-wrap: balance;
 }
 
 h1 {
-  font-size: var(--step-3);
+  font-size: var(--step-4);
+  letter-spacing: -0.024em;
 }
 h2 {
   font-size: var(--step-2);
+  letter-spacing: -0.018em;
 }
 h3 {
   font-size: var(--step-1);
@@ -55,6 +59,7 @@ p {
 a {
   color: var(--info-fg);
   text-underline-offset: 2px;
+  transition: color var(--dur-fast) var(--ease);
 }
 
 a:hover {
@@ -80,10 +85,20 @@ ol {
   padding: 0;
 }
 
+/* Numbers in a console are read in columns; keep them aligned everywhere. */
+:where(td, th, .mono, .stat__value, .meter__value, .timeline__time) {
+  font-variant-numeric: tabular-nums;
+}
+
 :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
   border-radius: var(--radius-sm);
+}
+
+/* On the navy chrome the standard ring loses contrast; brighten it there. */
+.shell__sidebar :where(a, button, [tabindex]):focus-visible {
+  outline-color: var(--focus-ring-inverse);
 }
 
 /* Visually hidden but available to assistive technology. */
@@ -103,19 +118,24 @@ ol {
   position: absolute;
   left: var(--space-3);
   top: -4rem;
-  z-index: 50;
+  z-index: 60;
   padding: var(--space-2) var(--space-4);
   background: var(--surface);
+  color: var(--ink);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius);
-  box-shadow: var(--shadow);
-  transition: top 120ms ease;
+  box-shadow: var(--shadow-lg);
+  font-weight: 600;
+  text-decoration: none;
+  transition: top var(--dur) var(--ease);
 }
 
 .skip-link:focus {
   top: var(--space-3);
 }
 
+/* Every animation in this console is comprehension, not decoration, so all of
+   it can be switched off without losing information. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

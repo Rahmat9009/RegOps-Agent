@@ -1,0 +1,5 @@
+﻿# Vercel CLI project link (org/project ids — not committed).
+.vercel
+
+# Local environment values and Vercel OIDC token.
+.env.local
