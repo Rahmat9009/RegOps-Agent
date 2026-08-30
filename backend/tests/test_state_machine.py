@@ -92,6 +92,32 @@ def test_failed_recoverable_resumes_only_from_recorded_checkpoint_state() -> Non
     Run.model_validate(resumed.model_dump())
 
 
+def test_each_repeated_recoverable_cycle_increments_attempt_count_once() -> None:
+    repositories = InMemoryRepositories.for_tests()
+    coordinator = RunStateCoordinator(repositories, repositories, repositories)
+    coordinator.initialize(make_run())
+    coordinator.transition("run-1", RunState.EXTRACTING)
+
+    for attempt in range(1, 4):
+        failed = coordinator.transition(
+            "run-1",
+            RunState.FAILED_RECOVERABLE,
+            failure_code="OBLIGATION_VERIFICATION_REJECTED",
+        )
+        assert failed.recovery is not None
+        assert failed.recovery.attempt_count == attempt
+        if attempt < 3:
+            resumed = coordinator.transition("run-1", RunState.EXTRACTING)
+            assert resumed.recovery is None
+
+    failed_transitions = [
+        item
+        for item in repositories.get_run("run-1").transitions
+        if item.to_state is RunState.FAILED_RECOVERABLE
+    ]
+    assert len(failed_transitions) == 3
+
+
 def test_terminal_states_have_no_outgoing_transitions() -> None:
     assert ALLOWED_TRANSITIONS[RunState.COMPLETED] == frozenset()
     assert ALLOWED_TRANSITIONS[RunState.FAILED] == frozenset()

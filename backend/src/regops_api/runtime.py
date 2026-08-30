@@ -31,6 +31,7 @@ from regops_api.integrations import (
     RuntimeStoragePort,
     WorkflowLauncher,
 )
+from regops_api.internal_auth import WorkflowIdentityVerifier
 from regops_api.repositories import RepositoryBundle
 from regops_api.runtime_errors import DomainConflictError
 from regops_api.schemas import (
@@ -58,6 +59,7 @@ from regops_api.schemas import (
 )
 from regops_api.state_machine import RunStateCoordinator, plan_run_transition
 from regops_api.storage import sanitize_filename
+from regops_api.worker_runtime import MinimumLiveWorker
 
 Clock = Callable[[], datetime]
 
@@ -70,6 +72,8 @@ class RuntimeContainer:
     workflows: WorkflowLauncher
     reviewer_identity: ReviewerIdentityProvider
     counterfactual: DeterministicCounterfactual | None
+    workflow_identity: WorkflowIdentityVerifier | None = None
+    worker: MinimumLiveWorker | None = None
 
 
 class StaticReviewerIdentity:
@@ -578,5 +582,4 @@ class RuntimeAuditService:
         signed_report = AuditReport.model_validate(
             report.model_dump() | {"audit_package_url": signed_url}
         )
-        self._runtime.repositories.save_audit_report(signed_report)
         return signed_report

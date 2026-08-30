@@ -10,6 +10,7 @@ from regops_api.action_policy import ActionPolicy, AllowlistedActionService
 from regops_api.counterfactual import DeterministicCounterfactual
 from regops_api.domain_models import ConflictMatch, ProposedAmendment, SyntheticContract
 from regops_api.in_memory import InMemoryRepositories
+from regops_api.integrations import IntegrationUnavailableError
 from regops_api.main import create_app
 from regops_api.repositories import DuplicateRecordError, StaleRecordError
 from regops_api.schemas import (
@@ -43,7 +44,7 @@ class SeededRuntime:
     approval_id: str
 
 
-def seed_awaiting_approval() -> SeededRuntime:
+def seed_awaiting_approval(storage: RecordingStorage | None = None) -> SeededRuntime:
     repositories = InMemoryRepositories.for_tests()
     states = RunStateCoordinator(
         repositories,
@@ -86,7 +87,7 @@ def seed_awaiting_approval() -> SeededRuntime:
         ),
     )
     assert attempt.approval is not None
-    storage = RecordingStorage()
+    storage = storage or RecordingStorage()
     runtime = make_runtime(
         repositories=repositories,
         storage=storage,
@@ -152,6 +153,43 @@ def test_query_preview_rejection_and_audit_endpoints_use_persistent_state() -> N
     assert isinstance(audit.json()["audit_package_url"], str)
     assert "X-Goog-Signature=test" in audit.json()["audit_package_url"]
     assert seeded.storage.audit_packages[0][0] == "run-1"
+    assert seeded.repositories.get_audit_report("run-1").audit_package_url is None
+
+
+def test_audit_signing_outage_returns_metrics_with_null_url_and_later_retry() -> None:
+    url = (
+        "https://storage.googleapis.com/test-private/runs/run-1/audit/"
+        "audit-package.json?X-Goog-Signature=test"
+    )
+    storage = RecordingStorage(audit_results=[None, url])
+    seeded = seed_awaiting_approval(storage)
+
+    unavailable = seeded.client.get("/api/v1/runs/run-1/audit")
+    retried = seeded.client.get("/api/v1/runs/run-1/audit")
+
+    assert unavailable.status_code == 200
+    assert unavailable.json()["audit_package_url"] is None
+    assert unavailable.json()["processing"]["documents_processed"] == 0
+    assert retried.status_code == 200 and retried.json()["audit_package_url"] == url
+    assert [run_id for run_id, _ in storage.audit_packages] == ["run-1", "run-1"]
+    assert seeded.repositories.get_audit_report("run-1").audit_package_url is None
+
+
+def test_audit_upload_failure_keeps_sanitized_service_unavailable() -> None:
+    storage = RecordingStorage(
+        audit_results=[IntegrationUnavailableError("audit package upload is unavailable")]
+    )
+    seeded = seed_awaiting_approval(storage)
+
+    response = seeded.client.get("/api/v1/runs/run-1/audit")
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "code": "SERVICE_UNAVAILABLE",
+        "message": "A required service is unavailable",
+        "details": None,
+    }
+    assert seeded.repositories.get_audit_report("run-1").audit_package_url is None
 
 
 def test_findings_filters_and_counts_apply_before_stable_pagination() -> None:

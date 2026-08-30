@@ -24,6 +24,8 @@ from regops_api.domain_models import (
     ShadowContractSnapshot,
     SourceDocumentRecord,
     SyntheticContract,
+    VerifiedWorkerHandoffCommit,
+    WorkerHandoffRecord,
 )
 from regops_api.integrations import IntegrationUnavailableError
 from regops_api.repositories import (
@@ -68,6 +70,7 @@ COLLECTIONS = {
     "case_tags": "case_tags",
     "action_idempotency": "action_idempotency",
     "pending_approval_slots": "pending_approval_slots",
+    "worker_handoffs": "worker_handoffs",
 }
 
 
@@ -75,9 +78,7 @@ def serialize_model(model: BaseModel) -> dict[str, Any]:
     return model.model_dump(mode="json")
 
 
-def deserialize_model[ModelT: BaseModel](
-    model: type[ModelT], payload: dict[str, Any]
-) -> ModelT:
+def deserialize_model[ModelT: BaseModel](model: type[ModelT], payload: dict[str, Any]) -> ModelT:
     return model.model_validate(payload)
 
 
@@ -317,9 +318,7 @@ class FirestoreRepositories:
 
     def add_action(self, record: ActionRecord) -> None:
         action_reference = self._document("proposed_actions", record.action.action_id)
-        key_reference = self._document(
-            "action_idempotency", record.action.idempotency_key
-        )
+        key_reference = self._document("action_idempotency", record.action.idempotency_key)
         transaction = self._client.transaction()
 
         @firestore.transactional
@@ -407,9 +406,7 @@ class FirestoreRepositories:
             if run_reference.get(transaction=current_transaction).exists:
                 raise DuplicateRecordError("run already exists")
             current_transaction.create(run_reference, serialize_model(run))
-            current_transaction.create(
-                checkpoint_reference, serialize_model(checkpoint)
-            )
+            current_transaction.create(checkpoint_reference, serialize_model(checkpoint))
 
         try:
             initialize(transaction)
@@ -427,12 +424,8 @@ class FirestoreRepositories:
             "checkpoints",
             checkpoint_document_id(commit.run.run_id, commit.checkpoint.sequence),
         )
-        regulation_reference = self._document(
-            "regulations", commit.regulation.regulation.reg_id
-        )
-        source_reference = self._document(
-            "source_documents", commit.source_document.run_id
-        )
+        regulation_reference = self._document("regulations", commit.regulation.regulation.reg_id)
+        source_reference = self._document("source_documents", commit.source_document.run_id)
         transaction = self._client.transaction()
 
         @firestore.transactional
@@ -446,15 +439,9 @@ class FirestoreRepositories:
             if any(snapshot.exists for snapshot in snapshots):
                 raise DuplicateRecordError("run intake metadata already exists")
             current_transaction.create(run_reference, serialize_model(commit.run))
-            current_transaction.create(
-                checkpoint_reference, serialize_model(commit.checkpoint)
-            )
-            current_transaction.create(
-                regulation_reference, serialize_model(commit.regulation)
-            )
-            current_transaction.create(
-                source_reference, serialize_model(commit.source_document)
-            )
+            current_transaction.create(checkpoint_reference, serialize_model(commit.checkpoint))
+            current_transaction.create(regulation_reference, serialize_model(commit.regulation))
+            current_transaction.create(source_reference, serialize_model(commit.source_document))
 
         try:
             commit_metadata(transaction)
@@ -465,6 +452,170 @@ class FirestoreRepositories:
         except GoogleAPICallError as error:
             raise IntegrationUnavailableError("persistent storage is unavailable") from error
 
+    def get_worker_handoff(self, run_id: str) -> WorkerHandoffRecord:
+        return self._get("worker_handoffs", run_id, WorkerHandoffRecord)
+
+    def commit_verified_worker_handoff(self, commit: VerifiedWorkerHandoffCommit) -> bool:
+        run_id = commit.run.run_id
+        run_reference = self._document("runs", run_id)
+        source_reference = self._document("source_documents", run_id)
+        handoff_reference = self._document("worker_handoffs", run_id)
+        contract_reference = self._document("synthetic_contracts", commit.contract.contract_id)
+        finding_reference = self._document("findings", commit.finding.finding_id)
+        action_reference = self._document("proposed_actions", commit.action.action.action_id)
+        approval_reference = self._document("approvals", commit.approval.approval_id)
+        slot_reference = self._document("pending_approval_slots", run_id)
+        key_reference = self._document("action_idempotency", commit.action.action.idempotency_key)
+        previous_reference = self._document(
+            "checkpoints",
+            checkpoint_document_id(run_id, commit.checkpoints[0].sequence - 1),
+        )
+        obligations_query = self._collection("obligations").where(
+            filter=FieldFilter("run_id", "==", run_id)
+        )
+        findings_query = self._collection("findings").where(
+            filter=FieldFilter("run_id", "==", run_id)
+        )
+        actions_query = self._collection("proposed_actions").where(
+            filter=FieldFilter("run_id", "==", run_id)
+        )
+        approvals_query = self._collection("approvals").where(
+            filter=FieldFilter("run_id", "==", run_id)
+        )
+        transaction = self._client.transaction()
+
+        @firestore.transactional
+        def handoff(current_transaction: Any) -> bool:
+            run_snapshot = run_reference.get(transaction=current_transaction)
+            source_snapshot = source_reference.get(transaction=current_transaction)
+            handoff_snapshot = handoff_reference.get(transaction=current_transaction)
+            contract_snapshot = contract_reference.get(transaction=current_transaction)
+            finding_snapshot = finding_reference.get(transaction=current_transaction)
+            action_snapshot = action_reference.get(transaction=current_transaction)
+            approval_snapshot = approval_reference.get(transaction=current_transaction)
+            slot_snapshot = slot_reference.get(transaction=current_transaction)
+            key_snapshot = key_reference.get(transaction=current_transaction)
+            previous_snapshot = previous_reference.get(transaction=current_transaction)
+            obligation_snapshots = list(current_transaction.get(obligations_query))
+            finding_snapshots = list(current_transaction.get(findings_query))
+            action_snapshots = list(current_transaction.get(actions_query))
+            approval_snapshots = list(current_transaction.get(approvals_query))
+            if not run_snapshot.exists or not source_snapshot.exists:
+                raise StaleRecordError("worker handoff base binding is missing")
+            current_run = Run.model_validate(run_snapshot.to_dict())
+            source = SourceDocumentRecord.model_validate(source_snapshot.to_dict())
+            if handoff_snapshot.exists:
+                existing = WorkerHandoffRecord.model_validate(handoff_snapshot.to_dict())
+                obligations = sorted(
+                    (
+                        Obligation.model_validate(
+                            self._without(cast(dict[str, Any], snapshot.to_dict()), "run_id")
+                        )
+                        for snapshot in obligation_snapshots
+                        if snapshot.exists
+                    ),
+                    key=lambda item: item.obligation_id,
+                )
+                if (
+                    existing != commit.handoff
+                    or source != commit.expected_source
+                    or current_run.state is not RunState.AWAITING_APPROVAL
+                    or not all(
+                        snapshot.exists
+                        for snapshot in (
+                            finding_snapshot,
+                            action_snapshot,
+                            approval_snapshot,
+                            slot_snapshot,
+                            key_snapshot,
+                        )
+                    )
+                    or Finding.model_validate(finding_snapshot.to_dict()) != commit.finding
+                    or ActionRecord.model_validate(action_snapshot.to_dict()) != commit.action
+                    or Approval.model_validate(approval_snapshot.to_dict()) != commit.approval
+                    or PendingApprovalSlot.model_validate(slot_snapshot.to_dict())
+                    != commit.pending_slot
+                    or obligations
+                    != sorted(commit.obligations, key=lambda item: item.obligation_id)
+                    or current_run.pending_approvals != [commit.approval]
+                ):
+                    raise StaleRecordError("committed worker handoff is not coherent")
+                return True
+            if not previous_snapshot.exists:
+                raise StaleRecordError("worker handoff checkpoint is missing")
+            previous = RunCheckpoint.model_validate(previous_snapshot.to_dict())
+            if current_run.state is not RunState.MAPPED or source != commit.expected_source:
+                raise StaleRecordError("worker handoff base binding changed")
+            if (
+                obligation_snapshots
+                or finding_snapshots
+                or action_snapshots
+                or approval_snapshots
+                or finding_snapshot.exists
+                or action_snapshot.exists
+                or approval_snapshot.exists
+                or slot_snapshot.exists
+                or key_snapshot.exists
+            ):
+                raise StaleRecordError("partial worker handoff state exists")
+            try:
+                validate_authoritative_run_update(
+                    current=current_run,
+                    updated=commit.run,
+                    previous_checkpoint=previous,
+                    checkpoints=commit.checkpoints,
+                    audit_events=commit.audit_events,
+                )
+            except InvalidRunTransitionError as error:
+                raise StaleRecordError("worker transition binding changed") from error
+            if contract_snapshot.exists:
+                if SyntheticContract.model_validate(contract_snapshot.to_dict()) != commit.contract:
+                    raise StaleRecordError("synthetic target conflicts with fixture")
+            else:
+                current_transaction.create(contract_reference, serialize_model(commit.contract))
+            for obligation in commit.obligations:
+                current_transaction.create(
+                    self._document("obligations", obligation.obligation_id),
+                    serialize_model(obligation) | {"run_id": run_id},
+                )
+            current_transaction.create(finding_reference, serialize_model(commit.finding))
+            current_transaction.create(action_reference, serialize_model(commit.action))
+            current_transaction.create(
+                key_reference,
+                {
+                    "action_id": commit.action.action.action_id,
+                    "run_id": run_id,
+                    "finding_id": commit.finding.finding_id,
+                },
+            )
+            current_transaction.create(approval_reference, serialize_model(commit.approval))
+            current_transaction.create(slot_reference, serialize_model(commit.pending_slot))
+            current_transaction.set(run_reference, serialize_model(commit.run))
+            for checkpoint in commit.checkpoints:
+                current_transaction.create(
+                    self._document(
+                        "checkpoints",
+                        checkpoint_document_id(run_id, checkpoint.sequence),
+                    ),
+                    serialize_model(checkpoint),
+                )
+            for event in commit.audit_events:
+                current_transaction.create(
+                    self._document("audit_events", event.event_id),
+                    serialize_model(event),
+                )
+            current_transaction.create(handoff_reference, serialize_model(commit.handoff))
+            return False
+
+        try:
+            return bool(handoff(transaction))
+        except StaleRecordError:
+            raise
+        except AlreadyExists as error:
+            raise StaleRecordError("worker handoff changed during commit") from error
+        except GoogleAPICallError as error:
+            raise IntegrationUnavailableError("persistent storage is unavailable") from error
+
     def create_approval_required_action(
         self, commit: ApprovalRequiredActionCommit
     ) -> ActionAttemptResult:
@@ -472,15 +623,9 @@ class FirestoreRepositories:
         run_reference = self._document("runs", commit.action.run_id)
         finding_reference = self._document("findings", proposed.finding_id)
         action_reference = self._document("proposed_actions", proposed.action_id)
-        key_reference = self._document(
-            "action_idempotency", proposed.idempotency_key
-        )
-        approval_reference = self._document(
-            "approvals", commit.approval.approval_id
-        )
-        slot_reference = self._document(
-            "pending_approval_slots", commit.action.run_id
-        )
+        key_reference = self._document("action_idempotency", proposed.idempotency_key)
+        approval_reference = self._document("approvals", commit.approval.approval_id)
+        slot_reference = self._document("pending_approval_slots", commit.action.run_id)
         approval_query = self._collection("approvals").where(
             filter=FieldFilter("run_id", "==", commit.action.run_id)
         )
@@ -501,11 +646,7 @@ class FirestoreRepositories:
                 if snapshot.exists
             ]
             pending = sorted(
-                (
-                    approval
-                    for approval in approvals
-                    if approval.status is ApprovalStatus.PENDING
-                ),
+                (approval for approval in approvals if approval.status is ApprovalStatus.PENDING),
                 key=lambda item: item.approval_id,
             )
             if not run_snapshot.exists or not finding_snapshot.exists:
@@ -518,9 +659,7 @@ class FirestoreRepositories:
                     snapshot.exists
                     for snapshot in (action_snapshot, approval_snapshot, slot_snapshot)
                 ):
-                    raise StaleRecordError(
-                        "idempotency claim is not bound to a coherent approval"
-                    )
+                    raise StaleRecordError("idempotency claim is not bound to a coherent approval")
                 existing = ActionRecord.model_validate(action_snapshot.to_dict())
                 approval = Approval.model_validate(approval_snapshot.to_dict())
                 slot = PendingApprovalSlot.model_validate(slot_snapshot.to_dict())
@@ -535,21 +674,16 @@ class FirestoreRepositories:
                     or approval.run_id != existing.run_id
                     or approval.status is not ApprovalStatus.PENDING
                     or slot != commit.pending_slot
-                    or [item.approval_id for item in pending]
-                    != [approval.approval_id]
+                    or [item.approval_id for item in pending] != [approval.approval_id]
                     or current_finding.run_id != existing.run_id
                     or current_finding.status is not FindingStatus.AWAITING_APPROVAL
                     or current_finding.proposed_action != existing.action
                     or current_run.run_id != existing.run_id
                     or current_run.state in {RunState.COMPLETED, RunState.FAILED}
                 ):
-                    raise StaleRecordError(
-                        "idempotency claim is not bound to a coherent approval"
-                    )
+                    raise StaleRecordError("idempotency claim is not bound to a coherent approval")
                 current_transaction.create(
-                    self._document(
-                        "audit_events", commit.action_attempt_event.event_id
-                    ),
+                    self._document("audit_events", commit.action_attempt_event.event_id),
                     serialize_model(commit.action_attempt_event),
                 )
                 current_transaction.create(
@@ -564,9 +698,7 @@ class FirestoreRepositories:
             if action_snapshot.exists or approval_snapshot.exists:
                 raise DuplicateRecordError("approval-required action identifier exists")
             if slot_snapshot.exists or pending:
-                raise DuplicateRecordError(
-                    "run already has a pending draft-amendment approval"
-                )
+                raise DuplicateRecordError("run already has a pending draft-amendment approval")
             if (
                 current_finding != commit.expected_finding
                 or current_finding.run_id != commit.action.run_id
@@ -583,15 +715,9 @@ class FirestoreRepositories:
                     "finding_id": proposed.finding_id,
                 },
             )
-            current_transaction.create(
-                approval_reference, serialize_model(commit.approval)
-            )
-            current_transaction.set(
-                finding_reference, serialize_model(commit.finding)
-            )
-            current_transaction.create(
-                slot_reference, serialize_model(commit.pending_slot)
-            )
+            current_transaction.create(approval_reference, serialize_model(commit.approval))
+            current_transaction.set(finding_reference, serialize_model(commit.finding))
+            current_transaction.create(slot_reference, serialize_model(commit.pending_slot))
             for event in (
                 commit.action_attempt_event,
                 commit.first_execution_event,
@@ -611,9 +737,7 @@ class FirestoreRepositories:
         except (DuplicateRecordError, StaleRecordError):
             raise
         except AlreadyExists as error:
-            raise StaleRecordError(
-                "approval-required action changed during commit"
-            ) from error
+            raise StaleRecordError("approval-required action changed during commit") from error
         except GoogleAPICallError as error:
             raise IntegrationUnavailableError("persistent storage is unavailable") from error
 
@@ -654,8 +778,7 @@ class FirestoreRepositories:
             if run.state is RunState.COMPLETED and (
                 slot_snapshot.exists
                 or any(
-                    Approval.model_validate(snapshot.to_dict()).status
-                    is ApprovalStatus.PENDING
+                    Approval.model_validate(snapshot.to_dict()).status is ApprovalStatus.PENDING
                     for snapshot in approval_snapshots
                     if snapshot.exists
                 )
@@ -679,9 +802,7 @@ class FirestoreRepositories:
             except InvalidRunTransitionError as error:
                 raise StaleRecordError("run transition binding changed") from error
             current_transaction.set(run_reference, serialize_model(run))
-            current_transaction.create(
-                checkpoint_reference, serialize_model(checkpoint)
-            )
+            current_transaction.create(checkpoint_reference, serialize_model(checkpoint))
             current_transaction.create(event_reference, serialize_model(audit_event))
 
         try:
@@ -696,12 +817,8 @@ class FirestoreRepositories:
     def commit_approval_decision(self, commit: ApprovalDecisionCommit) -> None:
         if not commit.checkpoints:
             raise StaleRecordError("approval decision requires a state checkpoint")
-        approval_reference = self._document(
-            "approvals", commit.approval.approval_id
-        )
-        action_reference = self._document(
-            "proposed_actions", commit.action.action.action_id
-        )
+        approval_reference = self._document("approvals", commit.approval.approval_id)
+        action_reference = self._document("proposed_actions", commit.action.action.action_id)
         finding_reference = self._document("findings", commit.finding.finding_id)
         run_reference = self._document("runs", commit.run.run_id)
         first_sequence = commit.checkpoints[0].sequence
@@ -709,9 +826,7 @@ class FirestoreRepositories:
             "checkpoints",
             checkpoint_document_id(commit.run.run_id, first_sequence - 1),
         )
-        slot_reference = self._document(
-            "pending_approval_slots", commit.run.run_id
-        )
+        slot_reference = self._document("pending_approval_slots", commit.run.run_id)
         approval_query = self._collection("approvals").where(
             filter=FieldFilter("run_id", "==", commit.run.run_id)
         )
@@ -795,9 +910,7 @@ class FirestoreRepositories:
                 amendment = action.amendment
                 if amendment is None:
                     raise StaleRecordError("approved action has no amendment")
-                source_reference = self._document(
-                    "synthetic_contracts", amendment.contract_id
-                )
+                source_reference = self._document("synthetic_contracts", amendment.contract_id)
                 source_snapshot = source_reference.get(transaction=current_transaction)
                 if not source_snapshot.exists:
                     raise StaleRecordError("source contract is missing")
@@ -809,14 +922,10 @@ class FirestoreRepositories:
                 ):
                     raise StaleRecordError("shadow snapshot binding changed")
                 current_transaction.create(
-                    self._document(
-                        "shadow_snapshots", commit.snapshot.snapshot_id
-                    ),
+                    self._document("shadow_snapshots", commit.snapshot.snapshot_id),
                     serialize_model(commit.snapshot),
                 )
-            current_transaction.set(
-                approval_reference, serialize_model(commit.approval)
-            )
+            current_transaction.set(approval_reference, serialize_model(commit.approval))
             current_transaction.set(action_reference, serialize_model(commit.action))
             current_transaction.set(finding_reference, serialize_model(commit.finding))
             current_transaction.set(run_reference, serialize_model(commit.run))
@@ -825,9 +934,7 @@ class FirestoreRepositories:
                 current_transaction.create(
                     self._document(
                         "checkpoints",
-                        checkpoint_document_id(
-                            checkpoint.run_id, checkpoint.sequence
-                        ),
+                        checkpoint_document_id(checkpoint.run_id, checkpoint.sequence),
                     ),
                     serialize_model(checkpoint),
                 )
@@ -846,13 +953,9 @@ class FirestoreRepositories:
         except GoogleAPICallError as error:
             raise IntegrationUnavailableError("persistent storage is unavailable") from error
 
-    def _query_raw(
-        self, collection: str, *, field: str, value: object
-    ) -> list[dict[str, Any]]:
+    def _query_raw(self, collection: str, *, field: str, value: object) -> list[dict[str, Any]]:
         try:
-            query = self._collection(collection).where(
-                filter=FieldFilter(field, "==", value)
-            )
+            query = self._collection(collection).where(filter=FieldFilter(field, "==", value))
             return [cast(dict[str, Any], snapshot.to_dict()) for snapshot in query.stream()]
         except GoogleAPICallError as error:
             raise IntegrationUnavailableError("persistent storage is unavailable") from error

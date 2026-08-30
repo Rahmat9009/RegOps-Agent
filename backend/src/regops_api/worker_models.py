@@ -160,6 +160,14 @@ class AnalystDraftOutput(WorkerModel):
     obligations: Annotated[tuple[CandidateObligation, ...], Field(min_length=1, max_length=50)]
 
 
+class MinimumLiveDetection(WorkerModel):
+    """Non-authoritative Gemini detections for the exact synthetic demo fixture."""
+
+    placement_fee_prohibition: bool
+    fee_schedule_reissue: bool
+    employer_paid_medical_exception: bool
+
+
 class VerifiedObligationSet(WorkerModel):
     run_id: Identifier
     source: ImmutableSourceIdentity

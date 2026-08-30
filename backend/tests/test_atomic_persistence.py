@@ -81,9 +81,18 @@ class FakeSnapshot:
 
 @dataclass(frozen=True)
 class FakeQuery:
+    client: FakeFirestoreClient
     collection_name: str
     field: str
     value: object
+
+    def stream(self) -> list[FakeSnapshot]:
+        return [
+            FakeSnapshot(deepcopy(payload))
+            for (collection, _document_id), payload in self.client.documents.items()
+            if collection == self.collection_name
+            and payload.get(self.field) == self.value
+        ]
 
 
 class FakeDocumentReference:
@@ -111,7 +120,7 @@ class FakeCollection:
         return FakeDocumentReference(self.client, self.name, document_id)
 
     def where(self, *, filter: Any) -> FakeQuery:
-        return FakeQuery(self.name, str(filter.field_path), filter.value)
+        return FakeQuery(self.client, self.name, str(filter.field_path), filter.value)
 
 
 class FakeTransaction:

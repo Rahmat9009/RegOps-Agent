@@ -1,12 +1,62 @@
 # RegOps Phase 1B.2 implementation specification: Gemini + ADK worker
 
-Status: implementation-ready draft
+Status: historical Agent Runtime design specification with a deployed minimum-slice addendum
 
-Scope: specification only; no worker, dependency, contract, frontend, or infrastructure changes
+Original scope: specification only; later commits implemented a narrower hosted worker without changing the frozen contract
 
 Target branch: `backend/phase-1b2-agent-worker`
 
-Runtime target: Python 3.12 on Gemini Enterprise Agent Platform Agent Runtime, synthetic data only
+Original runtime target: Python 3.12 on Gemini Enterprise Agent Platform Agent Runtime, synthetic data only
+
+## Deployed minimum-slice profile — 2026-08-30
+
+This addendum is authoritative for claims about the submission deployment. The
+sections below preserve the original, broader Agent Runtime/Registry/Identity and
+observability design for history and future work; those planned resources are **not**
+the topology of the hosted minimum slice.
+
+The deployed synthetic demonstration uses the Vercel frontend at
+<https://regops-agent.vercel.app> and one Python 3.12 Cloud Run service at
+<https://regops-api-vx2qltpxca-ey.a.run.app> in Google Cloud project
+`claude-workspace-free` (`791800137620`), region `europe-west3`. Google Workflow
+`regops-run-worker` performs an OIDC-authenticated POST to the service's internal
+worker route; the exact source is
+[`infrastructure/workflows/regops-run-worker.yaml`](../infrastructure/workflows/regops-run-worker.yaml).
+Firestore Native `(default)` is authoritative, the bucket
+`claude-workspace-free-regops-private` remains private, Artifact Registry repository
+`regops` stores the image, Model Armor templates `regops-input` and `regops-output`
+guard content, and `gemini-3.5-flash` runs in `eu`.
+
+The hosted profile is deliberately narrower than the general analyst and ADK design:
+
+- it accepts only the exact checked-in synthetic regulation fixture bound to
+  `minimum-live-slice-v1` and its known SHA-256;
+- Gemini performs bounded boolean detection for three fixed synthetic obligations;
+- immutable backend fixture records supply canonical wording, dates, document
+  bindings, and evidence;
+- the deterministic verifier independently validates the exact digest, pages, and
+  quotations before persistence;
+- Gemini does not control IDs, canonical evidence, findings, actions, amendments,
+  approvals, reviewer identity, run state, or revalidation;
+- the ADK Impact Investigator is implemented and tested but is not invoked by this
+  hosted exact-hash slice; and
+- the Workflow is one worker invocation and return, not a long-lived approval
+  callback. Human approval is recorded through the frozen API after
+  `AWAITING_APPROVAL`.
+
+Verified live evidence includes clean run
+`011188a0-08c3-4bdc-864f-f90f415ca959`, hosted-frontend run
+`e76f7556-4899-41bc-bc8d-d87a2859db46`, and durable recovery run
+`7f0074d1-9463-4983-9417-a6ce58d87413`. The safe outcomes and exact limitations are
+recorded in [`docs/live-deployment-evidence.md`](live-deployment-evidence.md). No
+signed URL, provider payload, generated amendment text, credential, token, or
+private document content is included.
+
+Production remains fail-closed without trusted production identity/configuration.
+All records are synthetic. RegOps identifies potential conflicts and supports
+review; it does not determine legal compliance. Cloud Run Jobs, Pub/Sub, Agent
+Runtime/Registry, Memory Bank, Agent Gateway, and production authentication are not
+part of this hosted minimum slice.
 
 ## 1. Purpose and invariants
 
@@ -47,7 +97,7 @@ The core demonstration ends when the worker has either:
 Approval, shadow-copy application, deterministic revalidation, and audit generation continue
 to use the existing Phase 1B services and state machine.
 
-### Core feature-freeze gate
+### Original Agent Runtime feature-freeze gate (not the hosted minimum-slice gate)
 
 Phase 1B.2 is feature-complete and frozen only after one synthetic PDF runs end to end on Google
 Cloud through Workflows and the single Agent Runtime ADK application, produces deterministically
@@ -241,6 +291,14 @@ Resume behavior is deterministic:
 - `EXECUTING` or `REVALIDATING` is delegated to the existing approval/action lifecycle; this
   extraction worker does not replay an approval decision.
 
+Audit-package delivery also separates authority: the Storage client uploads the exact
+run-scoped private object, while separately `cloud-platform`-scoped ADC for the attached
+service identity authenticates IAM `signBlob` against the configured dedicated signer. The
+dedicated signer is the V4 credential identity and has read-only object access. A signing-only
+outage returns the otherwise valid metrics with a null response URL and logs only a fixed code;
+upload failure remains a sanitized service-unavailable response. Signed URLs are never stored as
+durable authoritative report state.
+
 ## 4. Exact pipeline and atomic stage boundaries
 
 Every successful state change uses `RunStateCoordinator` validation. A worker may append only
@@ -277,6 +335,16 @@ never shown the ID derivation namespace and any identifier-like model field is r
 than trusted.
 
 ## 5. Gemini Regulation Analyst boundary
+
+The hosted `minimum-live-slice-v1` demo is a narrower implementation profile than
+the general analyst below. Explicit demo composition, the exact known source hash
+and fixture document identity preselect a three-boolean Gemini detection request.
+Trusted backend code resolves true fixture keys to immutable accepted records, and
+the unchanged verifier independently validates every quotation against the parsed
+PDF. The hosted profile does not accept model-authored statements, evidence, dates
+or identifiers and has no fallback from rejected general extraction. The general
+candidate-producing analyst remains the path for non-fixture sources and is not used
+by the exact-hash hosted demonstration.
 
 ### Adapter contract
 
@@ -530,7 +598,7 @@ Only safe codes and fixed messages enter recovery/API/audit surfaces.
 | `PDF_PARSING_FAILED` | Terminal | Same bytes will fail deterministically; transition to `FAILED`. |
 | `MODEL_ARMOR_UNAVAILABLE` | Retryable | Fail closed before model/tool use or persistence; resume at the current active stage under the bounded retry budget. |
 | `MODEL_ARMOR_INPUT_BLOCKED` | Terminal/quarantined | No Gemini, ADK, or tool call; persist only sanitized security metadata and transition to `FAILED`. |
-| `MODEL_ARMOR_OUTPUT_BLOCKED` | Terminal/quarantined | Discard raw output, persist no analyst/investigator artifact, and transition to `FAILED` with sanitized metadata. |
+| `MODEL_ARMOR_OUTPUT_{PROMPT_INJECTION,SENSITIVE_DATA,UNSAFE_CONTENT}_BLOCKED` | Recoverable checkpoint, no automatic bypass retry | Discard decoded output, persist no analyst/investigator artifact, and resume only from the original `EXTRACTING` envelope under the stored worker attempt budget. |
 | `GEMINI_TIMEOUT` | Retryable | Resume at `EXTRACTING`; three total provider attempts per worker attempt, bounded worker attempts. |
 | `GEMINI_MALFORMED_OUTPUT` | Retryable once, then terminal | No obligations persisted; repeat clean request once, then `FAILED`. |
 | `GEMINI_SAFETY_REFUSAL` | Terminal | No prompt relaxation; transition to `FAILED`. |
@@ -541,9 +609,10 @@ Only safe codes and fixed messages enter recovery/API/audit surfaces.
 | `VERIFICATION_FAILED` | Terminal for invariant/synthetic-data violation; retryable only for missing transient storage read | No unverified finding is persisted. |
 
 `FAILED_RECOVERABLE` records the prior active state as `resume_state`. Resuming must first append
-the allowed transition back to that exact state. Retry budgets are stored in an internal
-run/stage attempt record and summarized in `Run.recovery.attempt_count`; clients cannot reset
-them.
+the allowed transition back to that exact state. Each actual failed recovery cycle appends one
+`FAILED_RECOVERABLE` transition; `Run.recovery.attempt_count` is derived from that append-only
+history, so clearing the active recovery object during resume cannot reset it and duplicate
+failure handling cannot double-increment it. Clients cannot reset the count.
 
 Idempotency is achieved through stable IDs, unique Firestore document IDs, compare-and-set run
 state, atomic stage commits, corpus/input digests, deterministic event IDs, and existing action
@@ -721,7 +790,7 @@ all versions only during implementation after compatibility tests on Python 3.12
 model is Gemini 3.5 Flash through deploy-time configuration; adapters and tests must not hard-code
 the provider model identifier.
 
-### Required resources, not provisioned here
+### Original Agent Runtime resources, not provisioned by this specification
 
 - Gemini Enterprise Agent Platform Agent Runtime enabled in a supported region, hosting one
   immutable `regops-phase1b2-worker` ADK application revision containing the root coordinator and
@@ -806,11 +875,16 @@ intermediate agent/tool messages, and final responses. Before parsing or persist
 Investigator output, the worker applies the output template and rejects blocked content.
 
 Prompt injection, jailbreak instructions, unsafe content, and configured sensitive-data matches
-fail closed. A transient Armor outage is `FAILED_RECOVERABLE` with safe code
+in decoded model-authored text fail closed. The bounded provider JSON is first structurally
+validated; opaque wrapper metadata and a type-valid `thoughtSignature` are discarded before the
+complete decoded text is inspected. A transient Armor outage is `FAILED_RECOVERABLE` with safe code
 `MODEL_ARMOR_UNAVAILABLE`; a confirmed malicious input is quarantined and transitions through the
 normal sanitized terminal-failure path with code `MODEL_ARMOR_INPUT_BLOCKED`. A blocked output
-uses `MODEL_ARMOR_OUTPUT_BLOCKED`. These are internal codes and do not change the frozen run-state
-enum or OpenAPI contract.
+uses the fixed category-specific internal code
+`MODEL_ARMOR_OUTPUT_PROMPT_INJECTION_BLOCKED`,
+`MODEL_ARMOR_OUTPUT_SENSITIVE_DATA_BLOCKED`, or
+`MODEL_ARMOR_OUTPUT_UNSAFE_CONTENT_BLOCKED`. These codes do not change the frozen run-state enum
+or OpenAPI contract and never include matched content.
 
 Persist only `run_id`, stage, Armor template/revision, event ID, allow/block/quarantine category,
 rule category, timestamp, and a digest needed for deduplication. Never persist the matched attack
@@ -1022,7 +1096,7 @@ already complete, Memory Bank, production enablement.
 Each phase is one reviewable commit unless dependency lock generation must be isolated. Every
 phase must leave all existing tests green and `git diff --check` clean.
 
-## 15. Four-minute deployment-proof checklist
+## 15. Original Agent Runtime deployment-proof checklist (not the hosted topology)
 
 The video uses one successful/approved run, one prepared rejected-path proof, one injection run,
 and one recovered-run trace, all from the same immutable core deployment revision. Pre-open every
@@ -1147,7 +1221,7 @@ would add cost and demo noise without improving investigation, verification, app
 understanding. Reconsider only if a concrete accessibility or communication requirement emerges;
 even then it remains an external media asset with no authoritative system access.
 
-## 17. Resolved decisions and remaining blockers
+## 17. Original design decisions and remaining Agent Runtime blockers
 
 ### Resolved for core
 

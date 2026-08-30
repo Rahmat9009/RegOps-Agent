@@ -1,5 +1,300 @@
 # Backend contract notes
 
+## 2026-08-30 — live Google Cloud deployment record (no contract change)
+
+The frozen contract, its eight operations and thirteen run states remain unchanged,
+and `frontend/` is untouched. The repository now records the real synthetic
+submission deployment: Vercel frontend `https://regops-agent.vercel.app`, Cloud Run
+API `https://regops-api-vx2qltpxca-ey.a.run.app`, project
+`claude-workspace-free` (`791800137620`), primary region `europe-west3`, Workflow
+`regops-run-worker`, Firestore Native `(default)`, private bucket
+`claude-workspace-free-regops-private`, Artifact Registry repository `regops`,
+Model Armor templates `regops-input`/`regops-output`, and Gemini
+`gemini-3.5-flash` in `eu`.
+
+The exact deployed Workflow source is now tracked at
+`infrastructure/workflows/regops-run-worker.yaml`. It performs one authenticated
+OIDC POST to the existing internal Cloud Run worker route and returns the response
+body. This is not a ninth public API operation and is not a long-lived human
+approval callback. The worker reaches `AWAITING_APPROVAL`; the frozen approval API
+then records the human decision and performs shadow-copy execution and deterministic
+revalidation.
+
+Three safe live proofs are recorded in `docs/live-deployment-evidence.md`: clean run
+`011188a0-08c3-4bdc-864f-f90f415ca959`, hosted-frontend run
+`e76f7556-4899-41bc-bc8d-d87a2859db46`, and recovered run
+`7f0074d1-9463-4983-9417-a6ce58d87413`. Together they establish live Gemini/Model
+Armor use, durable checkpoint recovery, the human approval boundary,
+`EXECUTING -> REVALIDATING -> COMPLETED`, a resolved finding, an
+`APPROVED_DRAFT`, and private audit-package download behavior. The record contains
+no provider payload, generated amendment text, signed URL, credential, token, or
+private document content.
+
+The hosted profile remains deliberately narrow. Gemini returns three booleans for
+the exact synthetic fixture; immutable backend records supply canonical wording and
+evidence; the deterministic verifier independently checks exact evidence. Gemini
+does not control IDs, persistence, actions, approvals, reviewer identity, or state.
+The ADK Impact Investigator remains implemented/tested but is not invoked by the
+hosted minimum slice. Production mode still fails closed without trusted production
+identity/configuration. RegOps identifies potential conflicts and supports review;
+it does not determine legal compliance.
+
+This documentation change did not create, update, delete, or redeploy any cloud
+resource. It adds the already deployed Workflow definition and corrects current
+documentation; dated notes below remain the accurate history of their earlier
+phases.
+
+## 2026-08-29 — keyless IAM audit signing correction (no contract change)
+
+The frozen contract and frontend remain unchanged. Inspection of the installed
+libraries proved the prior authority mismatch: `google.cloud.storage.Client.SCOPE`
+contains only `devstorage.full_control`, `devstorage.read_only` and
+`devstorage.read_write`, and the shared Google Cloud client obtains ADC with that
+client scope. The audit adapter reused the Storage client's resulting access token
+for IAM signing. The installed `google.auth.iam.Signer` explicitly requires either
+the `iam` or `cloud-platform` scope, so the old token path could not reliably call
+`signBlob` even when IAM roles and the dedicated signer were otherwise correct.
+
+Composition now establishes two credentials. The Storage client retains upload
+authority for the exact `runs/{run_id}/audit/audit-package.json` object. A separate
+`google.auth.default(scopes=(cloud-platform,))` call preserves the attached
+`regops-api` Cloud Run service identity as caller. A `google.auth.iam.Signer` targets
+only `REGOPS_AUDIT_SIGNER_SERVICE_ACCOUNT`, and a keyless `Signing` adapter supplies
+that dedicated identity to the installed V4 Storage URL generator. The canonical
+request is limited to `GET`, the configured 60–900 second expiry and the exact
+private object. Key-backed/self-signing credentials are rejected; no key file,
+access token, signature, canonical request or URL is logged.
+
+Audit metrics no longer disappear when signing alone is temporarily unavailable.
+Exact-object upload failure still raises the sanitized service-unavailable response.
+After a successful upload, signing failure or an unsafe/malformed URL produces only
+the fixed `AUDIT_SIGNING_UNAVAILABLE` warning and returns a valid `AuditReport` with
+`audit_package_url=null`. The durable report always stores a null URL, so an expired
+URL is never authoritative state; a later GET may upload and sign the same exact
+object again. No cloud diagnostic was run because this task prohibited Cloud Run
+deployment and cloud-state changes.
+
+## 2026-08-29 — bounded synthetic live obligation detection (no contract change)
+
+The frozen contract and frontend remain unchanged. The hosted minimum-live
+demonstration no longer asks Gemini to construct interdependent obligation fields.
+For `REGOPS_MODE=demo`, `minimum-live-slice-v1`, source SHA-256
+`6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9`,
+the fixture document identity and the explicit minimum-live worker composition,
+Gemini 3.5 Flash receives inspected PDF page text and returns only these required
+booleans: `placement_fee_prohibition`, `fee_schedule_reissue`, and
+`employer_paid_medical_exception`. Extra, missing, non-boolean, malformed, blocked
+or false output fails closed. Detection is preselected before generation, makes one
+Gemini call per delivery and has no general-extraction fallback or retry-until-true
+behavior.
+
+After all three detections are true, trusted backend code resolves the fixed keys to
+immutable synthetic ground-truth `AcceptedObligation` records. The unchanged
+`verify_obligations` gate then independently checks exact document identity, source
+digest, page and quotation presence against the parsed PDF. Only its canonical
+verified output can persist. The booleans are not authoritative evidence and are not
+persisted. Gemini does not author stored IDs, canonical statements, evidence,
+actions or approvals. The general candidate-producing analyst remains implemented
+and tested for non-fixture sources, but the exact-hash hosted demonstration does not
+use it and must not be described as unrestricted regulatory extraction.
+
+The content-free compatibility test is opt-in through
+`REGOPS_LIVE_DETECTION_DIAGNOSTIC=1`; default tests cannot reach ADC or the network.
+It may report only request status, a fixed Armor category, schema status, three
+booleans, verifier acceptance and bounded counts. No live result is claimed here
+unless the diagnostic is actually run during this change. It was run once with
+ADC/Vertex Enterprise, Gemini 3.5 Flash and the existing Model Armor templates:
+the request succeeded, Armor returned `allowed`, the strict schema parsed all three
+booleans as true, and the unchanged verifier accepted three of three resolved
+candidates. No source text, quotation, provider payload, thought signature,
+credential or token was emitted. The worker run was not retried and nothing was
+deployed.
+
+## 2026-08-29 — superseded free-form obligation reconciliation (no contract change)
+
+The frozen contract and frontend remain unchanged. One opt-in ADC/Vertex Enterprise
+diagnostic ran the exact tracked synthetic PDF through the current input Armor gate,
+Gemini 3.5 analyst, output Armor gate, strict Pydantic parser and unchanged
+`verify_obligations`. It emitted no candidate text, quotation, signature, provider
+payload, credential or token. The safe result was three candidates and three
+accepted records, one `UNSUPPORTED_OBLIGATION` issue, matching obligation types,
+and mismatches in statement, effective date and every complete evidence-set
+dimension (document, page, quotation and cardinality). Zero candidate evidence sets
+uniquely identified an accepted obligation. This proves the deployed failure was
+unsupported candidate/evidence output, not malformed transport or verifier drift.
+
+The evidence branch remains fail closed. For the exact
+`minimum-live-slice-v1`/SHA-256
+`6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9`
+only, the provider projection now restricts source binding fields and evidence
+choices to the fixture's already verified anchors, requires exactly the complete
+two-anchor set per candidate, and requires explicit date and exception fields. The
+v3 prompt requires verbatim source binding and exact, non-shortened,
+non-paraphrased quotations. Wrong, partial, ambiguous, duplicate or unknown
+evidence remains rejected; no fuzzy quotation matching was added.
+
+A second, independent deterministic synthetic-demo gate reconciles only statement
+wording. It activates only in demo composition after strict model parsing and only
+when a candidate's complete evidence set uniquely identifies one accepted fixture
+obligation using existing layout-whitespace normalization, every unchanged anchor
+passes the exact evidence verifier, and type, effective date and exceptions match.
+It replaces only the statement with the catalog's canonical statement. All
+candidates must form a complete one-to-one mapping; otherwise the original
+candidates go unchanged to the general verifier and fail. The general verifier was
+not modified. Unknown hashes receive the base projection and no reconciliation;
+production composition rejects the minimum-live worker.
+
+The content-free diagnostic is opt-in through
+`REGOPS_LIVE_OBLIGATION_DIAGNOSTIC=1` and excluded from default tests. It was run
+once to establish the mismatch. The changed projection was not repeatedly sampled
+until an output passed and has not been deployed.
+
+The recovery count defect was separate: resume intentionally cleared `Run.recovery`,
+but the next failure derived its count only from that cleared object, resetting the
+displayed count to one. Counts now derive from append-only transitions into
+`FAILED_RECOVERABLE`; each actual failed recovery appends one transition and
+increments once. A duplicate failure handler that observes the already-failed state
+does neither. Checkpoint resume, deterministic IDs and atomic handoff behavior are
+unchanged.
+
+## 2026-08-29 — Model Armor output wrapper correction (no contract change)
+
+The frozen contract and frontend remain unchanged. An opt-in, content-free live
+diagnostic used the tracked synthetic PDF, the production Gemini 3.5 request,
+ADC/Vertex Enterprise and the existing `regops-output` template. It proved
+`prompt_injection_blocked` for the complete raw provider response and `allowed` for
+the complete decoded model text in one generation, then proved
+`prompt_injection_blocked` for both raw and decoded text in a separate generation
+(each one candidate and one text part). Earlier probes had separately allowed both
+the known-safe candidate fixture and an opaque synthetic signature. This establishes
+the fixed detector category and also proves model-output variability: provider
+wrapper material can false-positive independently, while some generated decoded
+text is validly blocked. No response body, model text, quote, signature, credential
+or provider payload was printed, logged, persisted or returned by the diagnostic.
+
+The adapter handles both cases without weakening Armor. It retains
+`should_return_http_response=True`, structurally decodes the bounded raw JSON with
+duplicate-key and NaN rejection, validates candidate count, finish reason, role,
+safety state and exact allowed text-part keys, and discards opaque non-content
+metadata. Model Armor then inspects the complete decoded text before strict
+Pydantic candidate parsing and the unchanged deterministic verifier. Provider
+metadata is not a meaningful content-security boundary; accepting it cannot
+authorize a candidate, while inspecting it can make non-content transport fields
+look like model instructions. If decoded text is blocked, the category-specific
+failure is preserved and no candidate parsing or persistence occurs.
+
+To reduce the observed model-authored variant, the system prompt was versioned to
+`regulation-analyst-v2` and required neutral third-person declarative candidate
+fields, forbade prompt/meta/instructional material in candidate prose, and required
+the shortest exact supporting quotation without adjacent unrelated material. The
+provider projection additionally applies existing Pydantic string bounds and fixed
+obligation/document-kind enums. Strict Pydantic parsing and deterministic
+verification remain unchanged and authoritative.
+
+One post-correction live diagnostic was run after those v2 constraints were applied.
+The Gemini request returned one candidate/one text part and the existing output
+template reported `allowed` for both the raw envelope and decoded text. This was a
+verification of the changed request, not a retry that accepted or persisted either
+earlier blocked response; both blocked responses had already been discarded.
+
+A `thoughtSignature` is accepted only as a string attached to a string text part,
+then discarded before Armor inspection. It is never persisted, exposed or logged.
+Unknown part fields, thought-only parts, functions, executable code, non-text output,
+malformed envelopes and blocked decoded text all fail closed. The input Armor gate
+is unchanged. Decoded output blocks now use fixed sanitized category-specific
+internal codes for prompt injection, sensitive data and unsafe content, without
+changing the public contract shape or recording matched content.
+
+The output diagnostic is opt-in through
+`REGOPS_LIVE_GEMINI_ARMOR_DIAGNOSTIC=1` and remains excluded from the default suite.
+It performs read-only inference/template inspection and makes no cloud resource or
+deployment changes.
+
+## 2026-08-29 — Gemini 3.5 live compatibility correction (no contract change)
+
+The frozen public contract and frontend are unchanged. The live request rejection
+was reproduced with `google-genai==2.20.0` through an ADC/Vertex Enterprise-only,
+payload-blind diagnostic in `global`. Model access, `thinking_level=MINIMAL`, and
+JSON mode returned HTTP 200. The authored `AnalystDraftOutput.model_json_schema()`
+returned HTTP 400. A smaller inline projection returned HTTP 200; adding the outer
+obligation array's `minItems: 1` and `maxItems: 50` back to that nested projection
+returned HTTP 400. This identifies the endpoint's structured-schema complexity
+limit, specifically the outer 1..50 cardinality over the nested obligation/evidence
+shape, as the live request failure. `temperature=0` returned HTTP 200 in the reduced
+probe but is still intentionally omitted, together with `top_p` and `top_k`, under
+current Gemini 3.5 guidance.
+
+The provider schema remains structurally bounded and keeps the accepted 1..5 evidence
+cardinality; generation also remains bounded by output-token, raw-byte and decoded-
+character limits. The returned text must still pass the unchanged strict Pydantic
+model, its 1..50 obligation cardinality and all extra-field/identifier/text rules,
+then the unchanged deterministic verifier. No model-owned identifiers are accepted.
+
+Gemini 3.5 text parts may carry a string `thoughtSignature`. The adapter validates
+the signature type while structurally decoding the provider response, discards the
+opaque value before decoded-text Armor inspection, and never persists, returns or
+logs it. Missing text, malformed signatures, thought-only parts, tool calls,
+executable code and every other part field fail closed.
+
+The safe request diagnostic is opt-in through
+`REGOPS_LIVE_GEMINI_DIAGNOSTIC=1`; default tests cannot use the network or ADC. It
+uses only a fixed synthetic prompt and emits only fixed diagnostic labels/status
+codes. No cloud resources, deployment, workflow, source, action, approval or audit
+records were changed by this correction.
+
+## 2026-08-28 — minimum live worker slice (no contract change)
+
+The frozen public contract remains unchanged: exactly eight `/api/v1` paths and 13
+run states. `POST /internal/v1/workflow/run` and `GET /internal/v1/readiness` are
+private routes excluded from generated OpenAPI.
+
+The slice connects persistent synthetic PDF intake to Workflow OIDC, exact-object
+Cloud Storage reading, bounded parsing, Model Armor-guarded Gemini extraction,
+unchanged deterministic obligation/finding verification, and an atomic handoff to
+`AWAITING_APPROVAL`. A package runtime fixture is bound only to SHA-256
+`6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9`. It maps one
+verified prohibition to one synthetic placement-fee contract conflict. The mapping
+is backend-owned synthetic policy, not Gemini or ADK output. The ADK investigator
+remains implemented/tested but is not invoked. The 37-finding evaluation fixtures
+are unchanged.
+
+The handoff transaction stores verified obligations, one finding, the immutable
+synthetic source contract, deterministic draft amendment/action claim, pending
+Approval and run guard, audit events, worker claim, checkpoints, and final transition
+suffix together. Coherent duplicate delivery returns the stored result; partial or
+conflicting state returns a sanitized conflict. Preview and approval touch only a
+shadow copy. Approval remains an `APPROVED_DRAFT`; rejection executes nothing.
+
+Required demo variables are `REGOPS_MODE=demo`, `GOOGLE_CLOUD_PROJECT`,
+`REGOPS_BUCKET`, `REGOPS_WORKFLOW`, `REGOPS_WORKFLOW_REGION`,
+`REGOPS_ARMOR_LOCATION`, `REGOPS_GEMINI_LOCATION`, `REGOPS_GEMINI_MODEL`
+(`gemini-3.5-flash`), `REGOPS_ARMOR_INPUT_TEMPLATE`,
+`REGOPS_ARMOR_OUTPUT_TEMPLATE`, `REGOPS_WORKFLOW_SERVICE_ACCOUNT`,
+`REGOPS_WORKER_AUDIENCE`, `REGOPS_AUDIT_SIGNER_SERVICE_ACCOUNT`, and exact HTTPS
+`REGOPS_CORS_ORIGINS`. `REGOPS_REGION` is only a temporary location fallback. CORS
+is not authentication.
+
+IAM/deployment remain external blockers: the Workflow caller needs Cloud Run invoke;
+the service identity needs exact-object Storage, Firestore, Vertex AI, Model Armor,
+Workflow execution, and IAM Credentials `signBlob` permissions. Resources and model
+regional availability must already exist. No cloud resources were changed and no
+live-cloud verification is claimed.
+
+Exact local verification from `backend/`:
+
+```powershell
+.venv\Scripts\python.exe -m pytest -q
+.venv\Scripts\python.exe -m ruff check .
+.venv\Scripts\python.exe -m mypy --no-incremental
+.venv\Scripts\openapi-spec-validator.exe ..\contracts\openapi.yaml
+.venv\Scripts\python.exe scripts\compare_openapi.py
+.venv\Scripts\python.exe scripts\lock_dependencies.py --check
+.venv\Scripts\python.exe -m pip check
+.venv\Scripts\python.exe -m pip wheel --no-deps --no-build-isolation --wheel-dir .venv\wheel-check .
+docker build -t regops-api:minimum-live .
+git diff --check
+```
+
 ## 2026-08-16 — deliberate Phase 0 contract repair
 
 `contracts/openapi.yaml` was upgraded from OpenAPI 3.0.3 to 3.1.0 while retaining

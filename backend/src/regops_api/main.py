@@ -9,13 +9,16 @@ from typing import Annotated, Any, cast
 import uvicorn
 from fastapi import FastAPI, File, Form, Query, Request, UploadFile, status
 from fastapi import Path as PathParameter
+from fastapi.middleware.cors import CORSMiddleware
 from starlette.concurrency import run_in_threadpool
 
 from regops_api import __version__
 from regops_api.composition import build_cloud_runtime
 from regops_api.config import RuntimeSettings
+from regops_api.domain_models import WorkflowLaunchRequest
 from regops_api.errors import APIException, register_exception_handlers
 from regops_api.integrations import IntegrationUnavailableError
+from regops_api.internal_auth import WorkerAuthenticationError
 from regops_api.runtime import (
     RunIntakeService,
     RuntimeActionService,
@@ -37,6 +40,7 @@ from regops_api.schemas import (
     Run,
     Severity,
 )
+from regops_api.worker_runtime import WorkflowRunResult
 
 API_PREFIX = "/api/v1"
 
@@ -58,6 +62,7 @@ def create_app(
     runtime: RuntimeContainer | None = None,
 ) -> FastAPI:
     configured_settings = settings or RuntimeSettings.from_env()
+    configured_settings.validate_cors()
 
     @asynccontextmanager
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
@@ -79,12 +84,60 @@ def create_app(
     if runtime is not None:
         application.state.runtime = runtime
     register_exception_handlers(application)
+    if configured_settings.cors_origins:
+        application.add_middleware(
+            CORSMiddleware,
+            allow_origins=list(configured_settings.cors_origins),
+            allow_credentials=True,
+            allow_methods=["GET", "POST"],
+            allow_headers=["Authorization", "Content-Type"],
+        )
 
     def require_runtime(request: Request) -> RuntimeContainer:
         container = getattr(request.app.state, "runtime", None)
         if container is None:
             raise IntegrationUnavailableError("runtime composition is unavailable")
         return cast(RuntimeContainer, container)
+
+    def verify_workflow(request: Request, container: RuntimeContainer) -> None:
+        verifier = container.workflow_identity
+        if verifier is None:
+            raise IntegrationUnavailableError("workflow identity verifier is unavailable")
+        try:
+            verifier.verify(request.headers.get("authorization"))
+        except WorkerAuthenticationError as error:
+            raise APIException(
+                status_code=403 if error.wrong_caller else 401,
+                code="WORKFLOW_CALLER_REJECTED",
+                message="Workflow caller authentication failed",
+            ) from None
+
+    @application.post(
+        "/internal/v1/workflow/run",
+        response_model=WorkflowRunResult,
+        include_in_schema=False,
+    )
+    async def run_internal_workflow(
+        request: Request,
+        envelope: WorkflowLaunchRequest,
+    ) -> WorkflowRunResult:
+        container = require_runtime(request)
+        verify_workflow(request, container)
+        if container.worker is None:
+            raise IntegrationUnavailableError("workflow worker is unavailable")
+        return await run_in_threadpool(container.worker.run, envelope)
+
+    @application.get(
+        "/internal/v1/readiness",
+        include_in_schema=False,
+    )
+    async def get_internal_readiness(request: Request) -> dict[str, str]:
+        container = require_runtime(request)
+        verify_workflow(request, container)
+        request.app.state.settings.validate_startup()
+        if container.worker is None or not container.worker.ready():
+            raise IntegrationUnavailableError("workflow worker is unavailable")
+        return {"status": "ready"}
 
     @application.get(
         f"{API_PREFIX}/health",
@@ -189,9 +242,7 @@ def create_app(
         request: Request,
         finding_id: Annotated[str, PathParameter(min_length=1)],
     ) -> Finding:
-        return RuntimeQueryService(require_runtime(request).repositories).get_finding(
-            finding_id
-        )
+        return RuntimeQueryService(require_runtime(request).repositories).get_finding(finding_id)
 
     @application.post(
         f"{API_PREFIX}/actions/{{action_id}}/preview",
@@ -222,9 +273,7 @@ def create_app(
         approval_id: Annotated[str, PathParameter(min_length=1)],
         decision: ApprovalDecision,
     ) -> Approval:
-        return RuntimeApprovalService(require_runtime(request)).decide(
-            approval_id, decision
-        )
+        return RuntimeApprovalService(require_runtime(request)).decide(approval_id, decision)
 
     @application.get(
         f"{API_PREFIX}/runs/{{run_id}}/audit",

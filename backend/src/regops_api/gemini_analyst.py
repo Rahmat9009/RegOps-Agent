@@ -8,9 +8,10 @@ import time
 from collections.abc import Callable
 from contextlib import ExitStack, suppress
 from email.utils import parsedate_to_datetime
+from hashlib import sha256
 from importlib.resources import files
 from math import isfinite
-from typing import Any, Protocol, TypeVar
+from typing import Any, NamedTuple, Protocol, TypeVar
 
 import httpx
 from google import genai
@@ -23,6 +24,7 @@ from regops_api.adapter_logging import sensitive_io
 from regops_api.analyst_errors import AnalystCode, AnalystError
 from regops_api.analyst_settings import AnalystSettings
 from regops_api.config import RuntimeSettings
+from regops_api.live_fixture import MINIMUM_LIVE_FIXTURE_VERSION, load_minimum_live_fixture
 from regops_api.model_armor import (
     ArmorOutcome,
     ArmorResult,
@@ -31,7 +33,7 @@ from regops_api.model_armor import (
     TextInspection,
 )
 from regops_api.pdf_reader import parse_pdf
-from regops_api.worker_models import AnalystDraftOutput, SourceDocument
+from regops_api.worker_models import AnalystDraftOutput, MinimumLiveDetection, SourceDocument
 
 T = TypeVar("T")
 
@@ -42,9 +44,23 @@ class GenerationClient(Protocol):
     ) -> types.GenerateContentResponse: ...
 
 
+class DecodedModelResponse(NamedTuple):
+    text: str
+    candidate_count: int
+    text_part_count: int
+
+
 def analyst_prompt() -> str:
     return (
         files("regops_api").joinpath("prompts/regulation_analyst.txt").read_text(encoding="utf-8")
+    )
+
+
+def minimum_live_detection_prompt() -> str:
+    return (
+        files("regops_api")
+        .joinpath("prompts/minimum_live_detector.txt")
+        .read_text(encoding="utf-8")
     )
 
 
@@ -65,6 +81,125 @@ def _json_object(text: str) -> dict[str, Any]:
     if not isinstance(value, dict) or not value:
         raise ValueError("INVALID_OBJECT")
     return value
+
+
+def _provider_response_schema() -> dict[str, Any]:
+    """Return a bounded inline hint below Vertex's structured-schema complexity limit.
+
+    Pydantic remains the authoritative parser, including extra-field, string-length,
+    pattern and safe-text constraints that are intentionally absent from this hint.
+    """
+    evidence_properties: dict[str, Any] = {
+        "doc_id": {"type": "string", "maxLength": 128},
+        "doc_kind": {"type": "string", "enum": ["regulation"]},
+        "source_sha256": {"type": "string", "maxLength": 64},
+        "page": {"type": "integer"},
+        "quote": {"type": "string", "maxLength": 300},
+    }
+    evidence = {
+        "type": "object",
+        "properties": evidence_properties,
+        "required": ["doc_id", "doc_kind", "source_sha256", "page", "quote"],
+    }
+    obligation = {
+        "type": "object",
+        "properties": {
+            "statement": {"type": "string", "maxLength": 1000},
+            "type": {
+                "type": "string",
+                "enum": ["prohibition", "requirement", "limit", "exception"],
+            },
+            "evidence": {
+                "type": "array",
+                "items": evidence,
+                "minItems": 1,
+                "maxItems": 5,
+            },
+        },
+        "required": ["statement", "type", "evidence"],
+    }
+    return {
+        "type": "object",
+        "properties": {
+            "obligations": {
+                "type": "array",
+                "items": obligation,
+            }
+        },
+        "required": ["obligations"],
+    }
+
+
+def _minimum_live_detection_schema() -> dict[str, Any]:
+    properties = {
+        "placement_fee_prohibition": {"type": "boolean"},
+        "fee_schedule_reissue": {"type": "boolean"},
+        "employer_paid_medical_exception": {"type": "boolean"},
+    }
+    return {
+        "type": "object",
+        "properties": properties,
+        "required": list(properties),
+        "additionalProperties": False,
+    }
+
+
+def _decode_model_response(raw: str, *, max_output_chars: int) -> DecodedModelResponse:
+    """Validate the provider envelope and return only decoded model-authored text."""
+    envelope = _json_object(raw)
+    feedback = envelope.get("promptFeedback", {})
+    if not isinstance(feedback, dict):
+        raise ValueError("INVALID_PROMPT_FEEDBACK")
+    if feedback.get("blockReason"):
+        raise AnalystError(AnalystCode.GEMINI_REFUSED)
+    candidates = envelope.get("candidates")
+    if not isinstance(candidates, list) or len(candidates) != 1:
+        raise ValueError("INVALID_CANDIDATES")
+    candidate = candidates[0]
+    if not isinstance(candidate, dict):
+        raise ValueError("INVALID_CANDIDATE")
+    finish = candidate.get("finishReason")
+    if finish in {"SAFETY", "RECITATION", "BLOCKLIST", "PROHIBITED_CONTENT", "SPII"}:
+        raise AnalystError(AnalystCode.GEMINI_REFUSED)
+    if finish != "STOP":
+        raise ValueError("INCOMPLETE_OUTPUT")
+    safety = candidate.get("safetyRatings", [])
+    if not isinstance(safety, list) or any(
+        not isinstance(rating, dict) or rating.get("blocked") is True for rating in safety
+    ):
+        raise AnalystError(AnalystCode.GEMINI_REFUSED)
+    content = candidate.get("content")
+    if (
+        not isinstance(content, dict)
+        or set(content) != {"role", "parts"}
+        or content.get("role") != "model"
+    ):
+        raise ValueError("INVALID_ROLE")
+    parts = content.get("parts")
+    if not isinstance(parts, list) or not parts:
+        raise ValueError("EMPTY_PARTS")
+    text_parts: list[str] = []
+    for part in parts:
+        if (
+            not isinstance(part, dict)
+            or "text" not in part
+            or not isinstance(part["text"], str)
+            or not set(part) <= {"text", "thoughtSignature"}
+            or (
+                "thoughtSignature" in part
+                and not isinstance(part["thoughtSignature"], str)
+            )
+        ):
+            raise ValueError("NON_TEXT_OUTPUT")
+        text_parts.append(part["text"])
+    text = "".join(text_parts)
+    if not text.strip() or len(text) > max_output_chars:
+        raise ValueError("INVALID_OUTPUT_SIZE")
+    return DecodedModelResponse(
+        text=text,
+        candidate_count=len(candidates),
+        text_part_count=len(parts),
+    )
 
 
 def _retry_after(response: object) -> float:
@@ -103,6 +238,9 @@ class GeminiRegulationAnalyst:
         client: GenerationClient,
         input_inspector: TextInspection,
         output_inspector: TextInspection,
+        response_json_schema: dict[str, Any] | None = None,
+        system_instruction: str | None = None,
+        generation_attempts: int | None = None,
         clock: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], None] = time.sleep,
         jitter: Callable[[], float] = random.random,
@@ -112,6 +250,9 @@ class GeminiRegulationAnalyst:
         self._client = client
         self._input = input_inspector
         self._output = output_inspector
+        self._response_json_schema = response_json_schema or _provider_response_schema()
+        self._system_instruction = system_instruction or analyst_prompt()
+        self._generation_attempts = generation_attempts or self._settings.max_attempts
         self._clock, self._sleep, self._jitter = clock, sleep, jitter
         self._close_clients: Callable[[], None] = lambda: None
 
@@ -121,9 +262,16 @@ class GeminiRegulationAnalyst:
             self._close_clients()
 
     def _retry(
-        self, call: Callable[[float], T], *, deadline: float, timeout: float, expired: AnalystCode
+        self,
+        call: Callable[[float], T],
+        *,
+        deadline: float,
+        timeout: float,
+        expired: AnalystCode,
+        attempts: int | None = None,
     ) -> T:
-        for attempt in range(self._settings.max_attempts):
+        attempt_limit = attempts or self._settings.max_attempts
+        for attempt in range(attempt_limit):
             remaining = deadline - self._clock()
             if remaining <= 0:
                 raise AnalystError(expired)
@@ -137,7 +285,7 @@ class GeminiRegulationAnalyst:
                 retry_after = error.retry_after_seconds
             # Raise outside the exception handler so raw exception context cannot
             # survive in a retained sanitized failure.
-            if not transient or attempt + 1 >= self._settings.max_attempts:
+            if not transient or attempt + 1 >= attempt_limit:
                 raise AnalystError(code)
             delay = max(min(2**attempt * self._jitter(), 4.0), retry_after)
             if self._clock() + delay >= deadline:
@@ -168,12 +316,20 @@ class GeminiRegulationAnalyst:
                 code = AnalystCode.MODEL_ARMOR_MALFORMED_RESPONSE
             elif result.outcome is ArmorOutcome.INSPECTION_REJECTED:
                 code = AnalystCode.MODEL_ARMOR_REJECTED
+            elif direction == "output":
+                code = {
+                    ArmorOutcome.PROMPT_INJECTION_BLOCKED: (
+                        AnalystCode.MODEL_ARMOR_OUTPUT_PROMPT_INJECTION_BLOCKED
+                    ),
+                    ArmorOutcome.SENSITIVE_DATA_BLOCKED: (
+                        AnalystCode.MODEL_ARMOR_OUTPUT_SENSITIVE_DATA_BLOCKED
+                    ),
+                    ArmorOutcome.UNSAFE_CONTENT_BLOCKED: (
+                        AnalystCode.MODEL_ARMOR_OUTPUT_UNSAFE_CONTENT_BLOCKED
+                    ),
+                }.get(result.outcome, AnalystCode.MODEL_ARMOR_OUTPUT_BLOCKED)
             else:
-                code = (
-                    AnalystCode.MODEL_ARMOR_INPUT_BLOCKED
-                    if direction == "input"
-                    else AnalystCode.MODEL_ARMOR_OUTPUT_BLOCKED
-                )
+                code = AnalystCode.MODEL_ARMOR_INPUT_BLOCKED
             raise AnalystError(code)
 
         self._retry(
@@ -186,16 +342,18 @@ class GeminiRegulationAnalyst:
     def _generate(self, source: SourceDocument, timeout: float) -> str:
         retry_after = 0.0
         config = types.GenerateContentConfig(
-            system_instruction=analyst_prompt(),
-            temperature=0,
+            system_instruction=self._system_instruction,
             candidate_count=1,
             max_output_tokens=self._settings.max_output_tokens,
             response_mime_type="application/json",
-            response_json_schema=AnalystDraftOutput.model_json_schema(),
+            response_json_schema=self._response_json_schema,
             # Otherwise google-genai parses candidate JSON before our Armor gate.
             should_return_http_response=True,
             automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
-            thinking_config=types.ThinkingConfig(include_thoughts=False),
+            thinking_config=types.ThinkingConfig(
+                include_thoughts=False,
+                thinking_level=types.ThinkingLevel.MINIMAL,
+            ),
             http_options=types.HttpOptions(
                 timeout=max(1, int(timeout * 1000)),
                 retry_options=types.HttpRetryOptions(attempts=1),
@@ -263,7 +421,7 @@ class GeminiRegulationAnalyst:
             code = AnalystCode.GEMINI_MALFORMED_OUTPUT
         raise AnalystError(code, retry_after_seconds=retry_after)
 
-    def analyze(self, *, source: SourceDocument) -> AnalystDraftOutput:
+    def _analyze_text(self, *, source: SourceDocument) -> str:
         deadline = self._clock() + self._settings.stage_timeout_seconds
         try:
             source = SourceDocument.model_validate(source)
@@ -284,57 +442,67 @@ class GeminiRegulationAnalyst:
             deadline=deadline,
             timeout=self._settings.timeout_seconds,
             expired=AnalystCode.GEMINI_TIMEOUT,
+            attempts=self._generation_attempts,
         )
-        # First inspect the raw HTTP body so the SDK cannot parse model JSON.
-        # Inspect decoded text again to prevent JSON escapes hiding malicious text.
-        self._inspect(raw, "output", deadline)
+        # Structurally validate the provider envelope ourselves; the SDK still cannot
+        # parse candidate JSON ahead of this boundary. Provider wrapper metadata is not
+        # model-authored content and is discarded before content-security inspection.
         try:
-            envelope = _json_object(raw)
-            feedback = envelope.get("promptFeedback", {})
-            if feedback.get("blockReason"):
-                raise AnalystError(AnalystCode.GEMINI_REFUSED)
-            candidates = envelope.get("candidates")
-            if not isinstance(candidates, list) or len(candidates) != 1:
-                raise ValueError("INVALID_CANDIDATES")
-            candidate = candidates[0]
-            finish = candidate.get("finishReason")
-            if finish in {"SAFETY", "RECITATION", "BLOCKLIST", "PROHIBITED_CONTENT", "SPII"}:
-                raise AnalystError(AnalystCode.GEMINI_REFUSED)
-            if finish != "STOP":
-                raise ValueError("INCOMPLETE_OUTPUT")
-            if any(r.get("blocked") is True for r in candidate.get("safetyRatings", [])):
-                raise AnalystError(AnalystCode.GEMINI_REFUSED)
-            content = candidate["content"]
-            if content.get("role") != "model":
-                raise ValueError("INVALID_ROLE")
-            parts = content["parts"]
-            if not isinstance(parts, list) or not parts:
-                raise ValueError("EMPTY_PARTS")
-            if any(
-                not isinstance(p, dict) or set(p) != {"text"} or not isinstance(p["text"], str)
-                for p in parts
-            ):
-                raise ValueError("NON_TEXT_OUTPUT")
-            text = "".join(p["text"] for p in parts)
-            if not text.strip() or len(text) > self._settings.max_output_chars:
-                raise ValueError("INVALID_OUTPUT_SIZE")
+            decoded = _decode_model_response(
+                raw,
+                max_output_chars=self._settings.max_output_chars,
+            )
         except AnalystError:
             raise
         except Exception:
             raise AnalystError(AnalystCode.GEMINI_MALFORMED_OUTPUT) from None
-        self._inspect(text, "output", deadline)
+        del raw
+        # JSON decoding has exposed escaped text. Armor sees only the complete decoded
+        # model text and still runs before Pydantic or deterministic domain verification.
+        self._inspect(decoded.text, "output", deadline)
+        return decoded.text
+
+    def analyze(self, *, source: SourceDocument) -> AnalystDraftOutput:
+        text = self._analyze_text(source=source)
         try:
-            _json_object(text)  # Also reject duplicate keys and NaN, not just schema violations.
+            # Also reject duplicate keys and NaN, not just schema violations.
+            _json_object(text)
             return AnalystDraftOutput.model_validate_json(text)
         except (ValueError, ValidationError, RecursionError):
             pass
         raise AnalystError(AnalystCode.GEMINI_MALFORMED_OUTPUT)
 
 
-def build_demo_analyst(
-    *, content: bytes, runtime: RuntimeSettings, settings: AnalystSettings
+class GeminiMinimumLiveDetector(GeminiRegulationAnalyst):
+    """Guarded boolean-only detector for the immutable minimum-live fixture."""
+
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(
+            **kwargs,
+            response_json_schema=_minimum_live_detection_schema(),
+            system_instruction=minimum_live_detection_prompt(),
+            generation_attempts=1,
+        )
+
+    def detect(self, *, source: SourceDocument) -> MinimumLiveDetection:
+        text = self._analyze_text(source=source)
+        try:
+            _json_object(text)
+            result = MinimumLiveDetection.model_validate_json(text)
+        except (ValueError, ValidationError, RecursionError):
+            raise AnalystError(AnalystCode.GEMINI_MALFORMED_OUTPUT) from None
+        if not all(result.model_dump().values()):
+            raise AnalystError(AnalystCode.FIXTURE_DETECTION_REJECTED)
+        return result
+
+
+def _build_demo_adapter(
+    *,
+    content: bytes,
+    runtime: RuntimeSettings,
+    settings: AnalystSettings,
+    detector: bool,
 ) -> GeminiRegulationAnalyst:
-    """Explicit cloud construction only; no test/production/Developer API fallback."""
     settings.validate_demo(runtime)
     with sensitive_io():
         try:
@@ -342,7 +510,7 @@ def build_demo_analyst(
                 gemini = genai.Client(
                     enterprise=True,
                     project=runtime.project_id,
-                    location=runtime.region,
+                    location=runtime.gemini_location,
                     http_options=types.HttpOptions(
                         api_version="v1",
                         timeout=90_000,
@@ -352,7 +520,7 @@ def build_demo_analyst(
                 clients.callback(gemini.close)
                 armor_client = modelarmor_v1.ModelArmorClient(
                     client_options=ClientOptions(
-                        api_endpoint=f"modelarmor.{runtime.region}.rep.googleapis.com",
+                        api_endpoint=(f"modelarmor.{runtime.armor_location}.rep.googleapis.com"),
                     )
                 )
                 clients.callback(armor_client.transport.close)
@@ -362,7 +530,10 @@ def build_demo_analyst(
                     input_template=settings.armor_input_template,
                     output_template=settings.armor_output_template,
                 )
-                analyst = GeminiRegulationAnalyst(
+                adapter_type = (
+                    GeminiMinimumLiveDetector if detector else GeminiRegulationAnalyst
+                )
+                analyst = adapter_type(
                     content=content,
                     settings=settings,
                     client=gemini.models,
@@ -374,3 +545,38 @@ def build_demo_analyst(
         except Exception:
             pass
     raise AnalystError(AnalystCode.ANALYST_CONFIGURATION_INVALID)
+
+
+def build_demo_analyst(
+    *, content: bytes, runtime: RuntimeSettings, settings: AnalystSettings
+) -> GeminiRegulationAnalyst:
+    """Construct the general candidate analyst; it has no fixture-key behavior."""
+    return _build_demo_adapter(
+        content=content,
+        runtime=runtime,
+        settings=settings,
+        detector=False,
+    )
+
+
+def build_demo_detector(
+    *, content: bytes, runtime: RuntimeSettings, settings: AnalystSettings
+) -> GeminiMinimumLiveDetector:
+    """Construct the exact-hash demo detector without a general-analysis fallback."""
+    settings.validate_demo(runtime)
+    try:
+        fixture = load_minimum_live_fixture(sha256(content).hexdigest())
+    except ValueError:
+        raise AnalystError(AnalystCode.ANALYST_CONFIGURATION_INVALID) from None
+    if fixture.fixture_version != MINIMUM_LIVE_FIXTURE_VERSION:
+        raise AnalystError(AnalystCode.ANALYST_CONFIGURATION_INVALID)
+    adapter = _build_demo_adapter(
+        content=content,
+        runtime=runtime,
+        settings=settings,
+        detector=True,
+    )
+    if not isinstance(adapter, GeminiMinimumLiveDetector):
+        adapter.close()
+        raise AnalystError(AnalystCode.ANALYST_CONFIGURATION_INVALID)
+    return adapter

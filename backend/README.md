@@ -10,19 +10,50 @@ Google Workflows. It never fabricates obligations or findings.
 
 - `test` requires an explicitly injected runtime and may use the labelled in-memory
   repository and test fakes. It never discovers Google credentials.
-- `demo` is the currently deployable synthetic hackathon mode. It requires Firestore,
-  Cloud Storage, and Workflows configuration and assigns the backend-controlled
+- `demo` is the minimum live synthetic hackathon mode. It requires Firestore,
+  private Cloud Storage, Workflows, Model Armor, Vertex AI Gemini, Workflow OIDC,
+  and IAM `signBlob` configuration and assigns the backend-controlled
   `demo-reviewer` identity because all records are synthetic.
 - `production` requires those persistent services plus a trusted reviewer identity
   adapter. Authentication is not implemented by this phase. The default global app
   intentionally cannot start in production mode because it has no trusted identity
   adapter injection; startup fails closed rather than using the demo identity.
 
-`REGOPS_MODE` selects the mode (`production` by default). Persistent modes require
-`GOOGLE_CLOUD_PROJECT`, `REGOPS_REGION`, `REGOPS_BUCKET`, and `REGOPS_WORKFLOW`.
+`REGOPS_MODE` selects the mode (`production` by default). The live demo requires
+`GOOGLE_CLOUD_PROJECT`, `REGOPS_BUCKET`, `REGOPS_WORKFLOW`,
+`REGOPS_WORKFLOW_REGION`, `REGOPS_ARMOR_LOCATION`, `REGOPS_GEMINI_LOCATION`,
+`REGOPS_WORKFLOW_SERVICE_ACCOUNT`, `REGOPS_WORKER_AUDIENCE`,
+`REGOPS_AUDIT_SIGNER_SERVICE_ACCOUNT`, exact `REGOPS_CORS_ORIGINS`, and both
+Model Armor template variables. `REGOPS_REGION` is a temporary fallback for the
+three explicit locations; new configuration should not use it.
 `REGOPS_MAX_UPLOAD_BYTES` defaults to 10 MiB. `REGOPS_SIGNED_URL_TTL_SECONDS`
 defaults to 300 seconds and is constrained to 60–900 seconds. Demo and production
 never fall back to memory or fake integrations.
+
+## Hosted deployment
+
+The synthetic `demo` composition is deployed in Google Cloud project
+`claude-workspace-free` (`791800137620`). The Python 3.12 container runs on Cloud
+Run in `europe-west3` at
+<https://regops-api-vx2qltpxca-ey.a.run.app>, with public API base
+<https://regops-api-vx2qltpxca-ey.a.run.app/api/v1>. The production Vercel frontend
+at <https://regops-agent.vercel.app> uses the real HTTP adapter and the exact CORS
+origin `https://regops-agent.vercel.app`.
+
+The deployed service uses Firestore Native `(default)` in `europe-west3`, private
+bucket `claude-workspace-free-regops-private`, Artifact Registry repository
+`regops`, Workflow `regops-run-worker`, Model Armor templates `regops-input` and
+`regops-output`, and Gemini `gemini-3.5-flash` in `eu`. The Workflow calls this
+service's OIDC-protected internal worker route; its exact source is checked in at
+[`infrastructure/workflows/regops-run-worker.yaml`](../infrastructure/workflows/regops-run-worker.yaml).
+
+Live evidence includes an approved clean run to `COMPLETED`, a run completed
+through the hosted Vercel UI, a durable `FAILED_RECOVERABLE` resume, and a
+successfully downloaded private audit package. Safe identifiers, outcomes,
+topology, judge commands, and limitations are recorded in
+[`docs/live-deployment-evidence.md`](../docs/live-deployment-evidence.md). No signed
+URL, provider payload, credential, token, generated amendment text, or private
+document content is recorded there.
 
 ## Persistent layout and atomicity
 
@@ -33,7 +64,7 @@ Firestore uses stable top-level collections: `runs`, `regulations`,
 `action_idempotency`, and `pending_approval_slots`. Pydantic JSON serialization is
 validated again on every read.
 
-Firestore transactions provide five concurrency boundaries:
+Firestore transactions provide six concurrency boundaries:
 
 - intake commits the initial Run, sequence-zero checkpoint, RegulationRecord, and
   SourceDocumentRecord together after the private source upload;
@@ -49,11 +80,30 @@ Firestore transactions provide five concurrency boundaries:
   status, shadow snapshot, lifecycle checkpoints, and audit events together;
 - an action write atomically claims its deterministic SHA-256 idempotency document,
   preserving automatic tag/review-task idempotency.
+- verified worker handoff atomically stores verified obligations, one finding, its
+  synthetic target, draft action/idempotency claim, Approval/pending guard, audit
+  events, checkpoints, and `VERIFYING → VERIFIED → AWAITING_APPROVAL`.
 
 Source contracts are immutable. Approved amendments are stored as separately bound
 shadow snapshots. Source PDFs use `runs/{run_id}/source/regulation.pdf`; generated
 audit packages use `runs/{run_id}/audit/audit-package.json`. Objects remain private,
 and audit downloads are backend-generated short-lived HTTPS signed URLs.
+
+Audit upload and signing use separate authority boundaries. The Storage client's
+Storage-scoped credential uploads only the exact run audit object. Independently,
+the attached `regops-api` Cloud Run identity obtains ADC with the explicit
+`cloud-platform` scope and authenticates `google.auth.iam.Signer`; IAM `signBlob`
+targets only `REGOPS_AUDIT_SIGNER_SERVICE_ACCOUNT`. The resulting V4 credential
+names that dedicated signer, which has object-read permission, and signs a bounded
+60–900 second `GET` URL for exactly one private object. No private key, downloaded
+service-account file, self-signing token shortcut or public object permission is
+used. Signed URLs are response-only and are never durable audit state.
+
+If exact-object upload fails, the endpoint retains its sanitized `503`. If upload
+succeeds but IAM signing is temporarily unavailable or returns anything other than
+the exact absolute V4 HTTPS URL, the audit report remains available with
+`audit_package_url: null`; only `AUDIT_SIGNING_UNAVAILABLE` is logged. A later GET
+re-uploads the same run-scoped package and retries one signing operation.
 
 The Workflows execution argument contains only `run_id`, the private source GCS URI,
 the exact lowercase source SHA-256, and `synthetic: true`. Intake does not pass PDF
@@ -68,6 +118,49 @@ All Firestore, Storage, and Workflows adapters are synchronous. FastAPI runs who
 synchronous routes in its worker thread pool, while multipart intake delegates the
 synchronous service call through Starlette's managed thread-pool helper after the
 asynchronous upload read.
+
+## Minimum live worker slice
+
+`POST /internal/v1/workflow/run` accepts exactly the four-field Workflow envelope,
+is excluded from public OpenAPI, rebinds all fields to Firestore, and validates a
+Google OIDC token for the exact configured Workflow service account and audience.
+`GET /internal/v1/readiness` uses the same private boundary. The frozen health route
+remains liveness. CORS is an exact-origin browser policy and is not authentication.
+
+The worker reads only the persisted run object, enforces the PDF byte limit and exact
+lowercase SHA-256, and invokes the bounded parser and Model Armor-guarded Gemini
+detector. A package fixture accepts only source hash
+`6571084f3ff2215fcf48d467c7d9e8afd808f5f4b644c00ddca7a9ca66e4c5d9` and maps one
+verified placement-fee prohibition to one synthetic contract conflict. This mapping
+is deterministic backend policy, not Gemini or ADK output. Unknown hashes fail
+closed; the 37-finding evaluation fixtures are unchanged.
+
+For `minimum-live-slice-v1` only, explicit demo composition preselects a constrained
+Gemini 3.5 Flash request with exactly three required boolean fixture keys. It asks
+only whether the exact synthetic regulation contains the fixed placement-fee,
+fee-schedule and employer-paid-medical concepts. The model cannot return statements,
+quotations, dates or identifiers through this schema. All three detections must be
+true; missing, false, non-boolean, malformed, blocked or extra output fails closed
+without another Gemini call. The backend then resolves the keys to immutable
+synthetic ground-truth records and runs the unchanged `verify_obligations` gate,
+which independently confirms every document binding, digest, page and exact
+quotation against the parsed PDF. Only canonical verified output may persist.
+Gemini is not authoritative for IDs, canonical wording, evidence, actions or
+approvals. Unknown hashes and production mode cannot enter this path; there is no
+fallback from general extraction to fixture detection.
+
+Recovery attempt counts are derived from the run's append-only transitions into
+`FAILED_RECOVERABLE`, so each real failed recovery cycle increments once even though
+the public recovery object is cleared while a checkpoint is actively resumed. A
+duplicate failure handler observing an already-failed run does not add a transition
+or increment the count.
+
+Preview and revalidation run the same deterministic matcher on a shadow copy. The
+source contract remains immutable. Approval stores `APPROVED_DRAFT` and traverses
+`EXECUTING → REVALIDATING → COMPLETED`; rejection traverses directly to `COMPLETED`
+and is excluded from executed/completed actions. Audit signing uses separately
+scoped ADC plus IAM Credentials `signBlob` for the exact audit object; no JSON
+service-account key is used or expected.
 
 ## Clean setup and checks (PowerShell)
 
@@ -88,8 +181,12 @@ and requires no Google credentials. An optional test marked `firestore_emulator`
 runs only when `FIRESTORE_EMULATOR_HOST` is configured.
 
 Run locally with `.venv\Scripts\regops-api` or build `Dockerfile` for Cloud Run.
-Phase 1 remains a single-process service. The Gemini analyst adapter below is not
-wired into API orchestration. ADK and cloud resource provisioning are deferred.
+Phase 1 remains a single-process service. The hosted exact-hash minimum slice uses
+Gemini only for fixed obligation detection. The general candidate-producing analyst
+and ADK path remain implemented and tested but are not invoked by this hosted demo
+composition. The submission resources are deployed; reproduction and least-privilege
+topology are documented in `infrastructure/README.md`. Production authentication and
+general-document operation remain deferred.
 Cloud Run Jobs and Pub/Sub begin in Phase 2.
 
 ## Phase 1B.2B: guarded candidate extraction
@@ -147,22 +244,60 @@ Only fixed `ArmorOutcome` values leave the adapter; matched text and vendor
 diagnostics are discarded. No sanitized replacement text is substituted.
 
 `google-genai` is configured with `enterprise=True`, explicit project/location,
-ADC, API version `v1`, temperature zero, one candidate, no tools, no automatic
-function calls, no cached corpus and no thought output. `REGOPS_GEMINI_MODEL`
-defaults to `gemini-3.5-flash`. The generation config uses JSON MIME and
-`AnalystDraftOutput.model_json_schema()` with strict additional-field rejection.
-The versioned prompt is packaged in the wheel.
+ADC, API version `v1`, one candidate, no tools, no automatic function calls, no
+cached corpus and no thought output. Gemini 3.5 sampling parameters (`temperature`,
+`top_p`, and `top_k`) are intentionally omitted. Bounded extraction uses
+`thinking_level=MINIMAL` with `include_thoughts=False`; deterministic behavior comes
+from the system instruction, structured output and the verifier. `REGOPS_GEMINI_MODEL`
+defaults to `gemini-3.5-flash`.
+
+The general analyst generation config uses JSON MIME and a small inline provider schema. A live
+incremental probe showed that the complete nested Pydantic schema is rejected for
+schema complexity: restoring the outer obligation array's `minItems: 1` and
+`maxItems: 50` to the otherwise accepted projection reproduces HTTP 400. The request
+therefore omits that provider-side outer cardinality pair and redundant schema
+detail. The response remains bounded by
+token/byte/character limits and must still pass the unchanged, strict
+`AnalystDraftOutput` model (including the 1..50 obligation
+bound, extra-field rejection, identifiers, lengths and patterns) and deterministic
+verifier. Its versioned prompt is packaged in the wheel.
+
+The hosted minimum-live detector has a separate packaged instruction and a strict
+three-boolean schema with no free-form fields. It preserves one candidate, JSON MIME,
+`thinking_level=MINIMAL`, `include_thoughts=False`, disabled tools/function calls,
+raw-envelope decoding, both Armor gates and the existing byte/token/time limits.
+Unlike transient retries retained by the general analyst, detection makes exactly
+one Gemini generation call per worker delivery and never retries until a key is true.
 
 `should_return_http_response=True` prevents the SDK from parsing model JSON before
-inspection. The bounded raw response is inspected first, then its decoded text is
-inspected again before strict JSON/Pydantic parsing. Missing/empty/truncated,
-non-object, duplicate-key, non-finite, schema-invalid, refusal and tool-call outputs
-fail without partial candidates. Default bounds are 8,192 generated tokens,
-32,000 output characters and 128,000 raw response bytes.
+the application-controlled boundary. The adapter structurally decodes that bounded
+raw envelope with duplicate-key and non-finite-number rejection; validates the
+candidate count, finish reason, role, safety ratings and exact allowed part keys;
+then discards provider wrapper metadata. Model Armor inspects the complete decoded
+model-authored text before strict JSON/Pydantic parsing and deterministic
+verification. Inspecting opaque transport/provider metadata is not a content-security
+boundary: one live response was blocked only in its raw wrapper while its decoded
+text was allowed. A separate live generation produced decoded text that was itself
+prompt-injection-blocked; that block remains authoritative. The v2 system prompt
+was advanced to v3 to require neutral declarative candidate fields, complete source
+bindings, explicit date/exception fields and exact, non-paraphrased quotations,
+and the provider projection now bounds generated strings and obligation/document
+types to reduce unsupported prompt-like material. Missing/empty/truncated, non-object,
+schema-invalid, refusal and tool-call outputs fail without partial candidates.
+Default bounds are 8,192 generated tokens,
+32,000 output characters and 128,000 raw response bytes. A Gemini 3.5 text part may
+also contain a string `thoughtSignature`; it is accepted only alongside string
+`text`, type-checked while decoding, then discarded before Armor inspection. It is
+never returned, persisted or logged. Any malformed signature or any other part
+field fails closed. Confirmed output blocks use fixed category-specific internal
+codes for prompt injection, sensitive data or unsafe content; no matched content or
+provider diagnostic enters recovery records.
 
-`build_demo_analyst` requires `REGOPS_MODE=demo`, `GOOGLE_CLOUD_PROJECT`,
-`REGOPS_REGION`, `REGOPS_ARMOR_INPUT_TEMPLATE` and `REGOPS_ARMOR_OUTPUT_TEMPLATE`.
-Template names must belong to the configured project and region. Call `close()`
+`build_demo_analyst` and `build_demo_detector` require `REGOPS_MODE=demo`, `GOOGLE_CLOUD_PROJECT`,
+`REGOPS_ARMOR_LOCATION`, `REGOPS_GEMINI_LOCATION`,
+`REGOPS_ARMOR_INPUT_TEMPLATE` and `REGOPS_ARMOR_OUTPUT_TEMPLATE`.
+The detector factory additionally requires the exact known PDF hash and fixture
+version. Template names must belong to the configured project and Armor location. Call `close()`
 to release factory-owned clients. Tests inject fakes directly. Production remains
 unavailable; missing Armor configuration, raw API keys, alternate SDK endpoints
 and enabled message capture are rejected. Nothing silently falls back to the
@@ -195,6 +330,31 @@ and checks structured output and citations, not exact live prose. A skipped test
 does not establish regional model availability, live extraction quality or cloud
 security configuration.
 
+The request-only diagnostic is separately skipped unless
+`REGOPS_LIVE_GEMINI_DIAGNOSTIC=1`; it requires `GOOGLE_CLOUD_PROJECT` and
+`REGOPS_GEMINI_LOCATION` (or `REGOPS_REGION`) and uses ADC/Vertex Enterprise only.
+It sends a fixed synthetic prompt, adds the generation config incrementally, and
+prints only fixed labels and status codes. It never reads or logs response bodies,
+authorization material or thought signatures. It distinguishes model/IAM access
+from schema/config rejection and does not run in the default suite.
+
+The content-free output diagnostic is separately opt-in through
+`REGOPS_LIVE_GEMINI_ARMOR_DIAGNOSTIC=1`. It uses the tracked synthetic PDF, the
+production Gemini request configuration, ADC/Vertex Enterprise and the existing
+`regops-output` template. Raw response data remains only inside the sensitive-I/O
+scope and is discarded after inspection. The test emits only fixed raw/decoded
+`ArmorOutcome` categories and bounded candidate/text-part counts; it never emits or
+retains provider payloads, model text or thought signatures. A blocked decoded-text
+outcome is a successful security diagnosis, not an accepted candidate.
+
+The minimum-live compatibility diagnostic is separately opt-in through
+`REGOPS_LIVE_DETECTION_DIAGNOSTIC=1`. It uses the tracked PDF, Gemini 3.5 Flash,
+ADC/Vertex Enterprise and the existing input/output Armor templates. It emits only
+request success, a fixed Armor category, schema-parse status, the three booleans,
+verifier acceptance and candidate/verified counts. Source text, quotations,
+provider payloads, thought signatures and authorization material remain inside the
+sensitive-I/O scope and are discarded. It is excluded from the default suite.
+
 ### Reproducing dependency locks (Python 3.12, PowerShell)
 
 Existing pins are retained as resolver constraints. Reports stay in ignored
@@ -211,8 +371,10 @@ direct pins are checked by the default integrity test.
 .venv\Scripts\python -m pip check
 ```
 
-API references used for the adapter: [Google Gen AI SDK](https://googleapis.github.io/python-genai/)
-and [Model Armor sanitization result](https://docs.cloud.google.com/model-armor/reference/rest/v1/SanitizationResult).
+API references used for the adapter: [Gemini 3.5 Flash guide](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/guides/gemini-3-5-flash),
+[structured output](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/capabilities/control-generated-output),
+[Google Gen AI SDK](https://googleapis.github.io/python-genai/), and
+[Model Armor sanitization result](https://docs.cloud.google.com/model-armor/reference/rest/v1/SanitizationResult).
 
 ## Phase 1B.2C: ADK Impact Investigator
 
