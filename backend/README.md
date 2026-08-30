@@ -30,6 +30,31 @@ three explicit locations; new configuration should not use it.
 defaults to 300 seconds and is constrained to 60–900 seconds. Demo and production
 never fall back to memory or fake integrations.
 
+## Hosted deployment
+
+The synthetic `demo` composition is deployed in Google Cloud project
+`claude-workspace-free` (`791800137620`). The Python 3.12 container runs on Cloud
+Run in `europe-west3` at
+<https://regops-api-vx2qltpxca-ey.a.run.app>, with public API base
+<https://regops-api-vx2qltpxca-ey.a.run.app/api/v1>. The production Vercel frontend
+at <https://regops-agent.vercel.app> uses the real HTTP adapter and the exact CORS
+origin `https://regops-agent.vercel.app`.
+
+The deployed service uses Firestore Native `(default)` in `europe-west3`, private
+bucket `claude-workspace-free-regops-private`, Artifact Registry repository
+`regops`, Workflow `regops-run-worker`, Model Armor templates `regops-input` and
+`regops-output`, and Gemini `gemini-3.5-flash` in `eu`. The Workflow calls this
+service's OIDC-protected internal worker route; its exact source is checked in at
+[`infrastructure/workflows/regops-run-worker.yaml`](../infrastructure/workflows/regops-run-worker.yaml).
+
+Live evidence includes an approved clean run to `COMPLETED`, a run completed
+through the hosted Vercel UI, a durable `FAILED_RECOVERABLE` resume, and a
+successfully downloaded private audit package. Safe identifiers, outcomes,
+topology, judge commands, and limitations are recorded in
+[`docs/live-deployment-evidence.md`](../docs/live-deployment-evidence.md). No signed
+URL, provider payload, credential, token, generated amendment text, or private
+document content is recorded there.
+
 ## Persistent layout and atomicity
 
 Firestore uses stable top-level collections: `runs`, `regulations`,
@@ -159,7 +184,9 @@ Run locally with `.venv\Scripts\regops-api` or build `Dockerfile` for Cloud Run.
 Phase 1 remains a single-process service. The hosted exact-hash minimum slice uses
 Gemini only for fixed obligation detection. The general candidate-producing analyst
 and ADK path remain implemented and tested but are not invoked by this hosted demo
-composition. Cloud resource provisioning is deferred.
+composition. The submission resources are deployed; reproduction and least-privilege
+topology are documented in `infrastructure/README.md`. Production authentication and
+general-document operation remain deferred.
 Cloud Run Jobs and Pub/Sub begin in Phase 2.
 
 ## Phase 1B.2B: guarded candidate extraction

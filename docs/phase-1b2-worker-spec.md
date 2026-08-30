@@ -1,12 +1,62 @@
 # RegOps Phase 1B.2 implementation specification: Gemini + ADK worker
 
-Status: implementation-ready draft
+Status: historical Agent Runtime design specification with a deployed minimum-slice addendum
 
-Scope: specification only; no worker, dependency, contract, frontend, or infrastructure changes
+Original scope: specification only; later commits implemented a narrower hosted worker without changing the frozen contract
 
 Target branch: `backend/phase-1b2-agent-worker`
 
-Runtime target: Python 3.12 on Gemini Enterprise Agent Platform Agent Runtime, synthetic data only
+Original runtime target: Python 3.12 on Gemini Enterprise Agent Platform Agent Runtime, synthetic data only
+
+## Deployed minimum-slice profile — 2026-08-30
+
+This addendum is authoritative for claims about the submission deployment. The
+sections below preserve the original, broader Agent Runtime/Registry/Identity and
+observability design for history and future work; those planned resources are **not**
+the topology of the hosted minimum slice.
+
+The deployed synthetic demonstration uses the Vercel frontend at
+<https://regops-agent.vercel.app> and one Python 3.12 Cloud Run service at
+<https://regops-api-vx2qltpxca-ey.a.run.app> in Google Cloud project
+`claude-workspace-free` (`791800137620`), region `europe-west3`. Google Workflow
+`regops-run-worker` performs an OIDC-authenticated POST to the service's internal
+worker route; the exact source is
+[`infrastructure/workflows/regops-run-worker.yaml`](../infrastructure/workflows/regops-run-worker.yaml).
+Firestore Native `(default)` is authoritative, the bucket
+`claude-workspace-free-regops-private` remains private, Artifact Registry repository
+`regops` stores the image, Model Armor templates `regops-input` and `regops-output`
+guard content, and `gemini-3.5-flash` runs in `eu`.
+
+The hosted profile is deliberately narrower than the general analyst and ADK design:
+
+- it accepts only the exact checked-in synthetic regulation fixture bound to
+  `minimum-live-slice-v1` and its known SHA-256;
+- Gemini performs bounded boolean detection for three fixed synthetic obligations;
+- immutable backend fixture records supply canonical wording, dates, document
+  bindings, and evidence;
+- the deterministic verifier independently validates the exact digest, pages, and
+  quotations before persistence;
+- Gemini does not control IDs, canonical evidence, findings, actions, amendments,
+  approvals, reviewer identity, run state, or revalidation;
+- the ADK Impact Investigator is implemented and tested but is not invoked by this
+  hosted exact-hash slice; and
+- the Workflow is one worker invocation and return, not a long-lived approval
+  callback. Human approval is recorded through the frozen API after
+  `AWAITING_APPROVAL`.
+
+Verified live evidence includes clean run
+`011188a0-08c3-4bdc-864f-f90f415ca959`, hosted-frontend run
+`e76f7556-4899-41bc-bc8d-d87a2859db46`, and durable recovery run
+`7f0074d1-9463-4983-9417-a6ce58d87413`. The safe outcomes and exact limitations are
+recorded in [`docs/live-deployment-evidence.md`](live-deployment-evidence.md). No
+signed URL, provider payload, generated amendment text, credential, token, or
+private document content is included.
+
+Production remains fail-closed without trusted production identity/configuration.
+All records are synthetic. RegOps identifies potential conflicts and supports
+review; it does not determine legal compliance. Cloud Run Jobs, Pub/Sub, Agent
+Runtime/Registry, Memory Bank, Agent Gateway, and production authentication are not
+part of this hosted minimum slice.
 
 ## 1. Purpose and invariants
 
@@ -47,7 +97,7 @@ The core demonstration ends when the worker has either:
 Approval, shadow-copy application, deterministic revalidation, and audit generation continue
 to use the existing Phase 1B services and state machine.
 
-### Core feature-freeze gate
+### Original Agent Runtime feature-freeze gate (not the hosted minimum-slice gate)
 
 Phase 1B.2 is feature-complete and frozen only after one synthetic PDF runs end to end on Google
 Cloud through Workflows and the single Agent Runtime ADK application, produces deterministically
@@ -740,7 +790,7 @@ all versions only during implementation after compatibility tests on Python 3.12
 model is Gemini 3.5 Flash through deploy-time configuration; adapters and tests must not hard-code
 the provider model identifier.
 
-### Required resources, not provisioned here
+### Original Agent Runtime resources, not provisioned by this specification
 
 - Gemini Enterprise Agent Platform Agent Runtime enabled in a supported region, hosting one
   immutable `regops-phase1b2-worker` ADK application revision containing the root coordinator and
@@ -1046,7 +1096,7 @@ already complete, Memory Bank, production enablement.
 Each phase is one reviewable commit unless dependency lock generation must be isolated. Every
 phase must leave all existing tests green and `git diff --check` clean.
 
-## 15. Four-minute deployment-proof checklist
+## 15. Original Agent Runtime deployment-proof checklist (not the hosted topology)
 
 The video uses one successful/approved run, one prepared rejected-path proof, one injection run,
 and one recovered-run trace, all from the same immutable core deployment revision. Pre-open every
@@ -1171,7 +1221,7 @@ would add cost and demo noise without improving investigation, verification, app
 understanding. Reconsider only if a concrete accessibility or communication requirement emerges;
 even then it remains an external media asset with no authoritative system access.
 
-## 17. Resolved decisions and remaining blockers
+## 17. Original design decisions and remaining Agent Runtime blockers
 
 ### Resolved for core
 

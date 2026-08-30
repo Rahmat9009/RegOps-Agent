@@ -1,0 +1,17 @@
+main:
+  params: [args]
+  steps:
+    - invoke_worker:
+        call: http.post
+        args:
+          url: https://regops-api-vx2qltpxca-ey.a.run.app/internal/v1/workflow/run
+          auth:
+            type: OIDC
+            audience: https://regops-api-vx2qltpxca-ey.a.run.app
+          headers:
+            Content-Type: application/json
+          body: ${args}
+          timeout: 300
+        result: worker_response
+    - return_result:
+        return: ${worker_response.body}

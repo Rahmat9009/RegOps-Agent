@@ -1,5 +1,49 @@
 # Backend contract notes
 
+## 2026-08-30 — live Google Cloud deployment record (no contract change)
+
+The frozen contract, its eight operations and thirteen run states remain unchanged,
+and `frontend/` is untouched. The repository now records the real synthetic
+submission deployment: Vercel frontend `https://regops-agent.vercel.app`, Cloud Run
+API `https://regops-api-vx2qltpxca-ey.a.run.app`, project
+`claude-workspace-free` (`791800137620`), primary region `europe-west3`, Workflow
+`regops-run-worker`, Firestore Native `(default)`, private bucket
+`claude-workspace-free-regops-private`, Artifact Registry repository `regops`,
+Model Armor templates `regops-input`/`regops-output`, and Gemini
+`gemini-3.5-flash` in `eu`.
+
+The exact deployed Workflow source is now tracked at
+`infrastructure/workflows/regops-run-worker.yaml`. It performs one authenticated
+OIDC POST to the existing internal Cloud Run worker route and returns the response
+body. This is not a ninth public API operation and is not a long-lived human
+approval callback. The worker reaches `AWAITING_APPROVAL`; the frozen approval API
+then records the human decision and performs shadow-copy execution and deterministic
+revalidation.
+
+Three safe live proofs are recorded in `docs/live-deployment-evidence.md`: clean run
+`011188a0-08c3-4bdc-864f-f90f415ca959`, hosted-frontend run
+`e76f7556-4899-41bc-bc8d-d87a2859db46`, and recovered run
+`7f0074d1-9463-4983-9417-a6ce58d87413`. Together they establish live Gemini/Model
+Armor use, durable checkpoint recovery, the human approval boundary,
+`EXECUTING -> REVALIDATING -> COMPLETED`, a resolved finding, an
+`APPROVED_DRAFT`, and private audit-package download behavior. The record contains
+no provider payload, generated amendment text, signed URL, credential, token, or
+private document content.
+
+The hosted profile remains deliberately narrow. Gemini returns three booleans for
+the exact synthetic fixture; immutable backend records supply canonical wording and
+evidence; the deterministic verifier independently checks exact evidence. Gemini
+does not control IDs, persistence, actions, approvals, reviewer identity, or state.
+The ADK Impact Investigator remains implemented/tested but is not invoked by the
+hosted minimum slice. Production mode still fails closed without trusted production
+identity/configuration. RegOps identifies potential conflicts and supports review;
+it does not determine legal compliance.
+
+This documentation change did not create, update, delete, or redeploy any cloud
+resource. It adds the already deployed Workflow definition and corrects current
+documentation; dated notes below remain the accurate history of their earlier
+phases.
+
 ## 2026-08-29 — keyless IAM audit signing correction (no contract change)
 
 The frozen contract and frontend remain unchanged. Inspection of the installed
