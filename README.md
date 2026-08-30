@@ -37,6 +37,8 @@ See [live deployment evidence](docs/live-deployment-evidence.md) for resource to
 
 ## Hosted architecture
 
+The [architecture diagram](docs/assets/regops-architecture.png) shows the broader governed-agent design. The hosted minimum-slice topology and its implemented/deferred boundaries are summarized below.
+
 ```text
 Vercel React UI
       |

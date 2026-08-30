@@ -62,7 +62,9 @@ def parse_pdf(
             stderr=subprocess.DEVNULL,
             timeout=limits.timeout_seconds,
             check=False,
-            creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
+            creationflags=(
+                int(getattr(subprocess, "CREATE_NO_WINDOW", 0)) if sys.platform == "win32" else 0
+            ),
         )
         if result.returncode:
             # The only error body accepted from the child is an enum value.
