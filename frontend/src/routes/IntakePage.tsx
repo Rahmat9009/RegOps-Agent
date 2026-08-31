@@ -18,7 +18,7 @@ import {
   X,
 } from "lucide-react";
 
-import { api, toRegOpsApiError, type RegOpsApiError, type Run } from "@/lib/api";
+import { API_MODE, api, toRegOpsApiError, type RegOpsApiError, type Run } from "@/lib/api";
 import { setActiveRunId } from "@/lib/activeRun";
 import { formatBytes, formatDateTime } from "@/lib/format";
 import { RUN_STATE } from "@/lib/presentation";
@@ -29,8 +29,18 @@ import { Panel } from "@/components/Panel";
 import { ChangeDetectionDetails } from "@/components/RunInsights";
 
 /**
+ * The synthetic regulation kept in the repository. In live API mode the worker
+ * matches the document by exact content hash, so the reviewer must select this
+ * file rather than any locally generated stand-in.
+ */
+export const REPOSITORY_SAMPLE_PATH = "samples/regops-synthetic-regulation-2026.pdf";
+
+/**
  * A minimal placeholder PDF so the workflow can be demonstrated without hunting
  * for a file. It is explicitly labelled as a synthetic stand-in, not a regulation.
+ *
+ * Mock adapter only: the 192-byte placeholder carries no hash the live worker
+ * recognises, so the shortcut it backs is not offered against the real API.
  */
 function syntheticSampleFile(): File {
   const pdf = [
@@ -187,13 +197,19 @@ export function IntakePage() {
                 />
                 <p className="field__hint" id="regulation-file-hint">
                   Required. Must be a PDF.{" "}
-                  <button
-                    type="button"
-                    className="btn btn--ghost btn--sm"
-                    onClick={() => chooseFile(syntheticSampleFile())}
-                  >
-                    Insert a synthetic sample document
-                  </button>
+                  {API_MODE === "mock" ? (
+                    <button
+                      type="button"
+                      className="btn btn--ghost btn--sm"
+                      onClick={() => chooseFile(syntheticSampleFile())}
+                    >
+                      Insert a synthetic sample document
+                    </button>
+                  ) : (
+                    <>
+                      Select <Mono>{REPOSITORY_SAMPLE_PATH}</Mono> from the repository.
+                    </>
+                  )}
                 </p>
               </div>
             </div>
